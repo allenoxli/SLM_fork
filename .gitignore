@@ -1,0 +1,17 @@
+.vscode
+zip_file
+go*.sh
+models_*
+output
+
+*.pkl
+
+.venv
+
+
+# Compiled python modules.
+*.pyc
+
+# Byte-compiled
+__pycache__/
+.cache/
