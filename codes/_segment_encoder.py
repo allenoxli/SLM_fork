@@ -81,6 +81,7 @@ def SegmentEncoder(
             vocab_size=vocab_size,
             pad_id=pad_id,
             embedding=embedding,
+            **kwargs,
         )
 
     return SegmentLSTMEnocder(
@@ -88,6 +89,7 @@ def SegmentEncoder(
         dropout=dropout,
         n_layers=n_layers,
         embedding=embedding,
+        **kwargs,
     )
 
 class SegmentTransformerEnocder(nn.Module):
@@ -165,13 +167,15 @@ class SegmentLSTMEnocder(nn.Module):
         self.h_init_state = nn.Parameter(torch.zeros(n_layers, 1, d_model))
         self.c_init_state = nn.Parameter(torch.zeros(n_layers, 1, d_model))
 
+        self.encoder_input_dropout = nn.Dropout(kwargs['encoder_input_dropout_rate'])
+
         self.encoder.apply(init_module)
 
     def forward(self, x: Tensor, **kwargs):
         self.encoder.flatten_parameters()
 
         # `embeds` shape: (B, S, d_model)
-        embeds = self.embedding(x)
+        embeds = self.encoder_input_dropout(self.embedding(x))
 
         # Make LSTM init states (h, c).
         # `h` shape: (n_layers * num_directions, B, d_model)

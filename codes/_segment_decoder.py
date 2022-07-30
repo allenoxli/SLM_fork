@@ -48,6 +48,7 @@ class SegmentDecoderLSTM(nn.Module):
         self.dec_n_layers = dec_n_layers
 
     def gen_start_symbol_hidden(self, encoder_output: Tensor):
+        return self.segment_decoder_ff(encoder_output)
         return torch.tanh(self.segment_decoder_ff(encoder_output))
 
 
@@ -79,7 +80,7 @@ class SegmentDecoderLSTM(nn.Module):
         # `decoder_h_init` shape: (dec_n_layers, B, d_model)
         decoder_h_init = seg_start_hidden[:, :, d_model:].squeeze(0)
         decoder_h_init = decoder_h_init.view(batch_size, self.dec_n_layers, -1)
-        decoder_h_init = decoder_h_init.transpose(0, 1).contiguous()
+        decoder_h_init = torch.tanh(decoder_h_init.transpose(0, 1).contiguous())
 
         # `decoder_c_init` shape: (dec_n_layers, B, d_model)
         decoder_c_init = torch.zeros_like(decoder_h_init)

@@ -6,6 +6,7 @@ model_path = 'models_iterative_zip'
 model_path = 'models_normal'
 model_path = 'models_iterative'
 
+model_path = 'models_normal'
 
 res = {}
 def read_score(file_path):

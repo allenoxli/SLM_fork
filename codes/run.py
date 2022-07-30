@@ -718,10 +718,10 @@ if __name__ == "__main__":
     main(parse_args())
     print(f'Process time: {time() - start_time }')
 
-    
+
 #     args = parse_args()
 #     print(vars(args))
-    
+
 #     PROJECT_ROOT_PATH = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
 
 #     DATA = 'as'

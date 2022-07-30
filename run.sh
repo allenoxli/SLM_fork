@@ -10,10 +10,6 @@ MAX_SEG_LEN=$4
 EXTRY=$6
 
 MODEL_PATH=models/$MODE-$DATA-$MAX_SEG_LEN
-if [ $EXTRY != "normal" ]
-then
-MODEL_PATH=models_$EXTRY/$MODE-$DATA-$MAX_SEG_LEN
-fi
 MODEL_PATH=models_$EXTRY/$MODE-$DATA-$MAX_SEG_LEN
 
 
@@ -42,7 +38,7 @@ if [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "normal
 then
 echo "Start Unsupervised Training......"
 
-# rm -rf $MODEL_PATH/*
+rm -rf $MODEL_PATH/*
 cp models_normal/checkpoint $MODEL_PATH
 
 python -u -m codes.run \

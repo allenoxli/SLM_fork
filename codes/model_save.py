@@ -4,7 +4,7 @@
 """
 SLM Model
 """
-# %%
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -20,7 +20,6 @@ import torch.nn.functional as F
 
 from codes._segment_encoder import SegEmbedding, SegmentEncoder
 from codes._segment_decoder import SegmentDecoder
-# %%
 
 class SLMConfig(object):
     """Configuration for `SegmentalLM`."""
@@ -135,7 +134,7 @@ class SegmentalLM(nn.Module):
         # self.embedding2vocab = nn.Linear(config.embedding_size, config.vocab_size)
         self.embedding2vocab = self.embedding.emb2vocab
 
-        # Weight Tying
+        #Weight Tying
         # self.embedding2vocab.weight = self.embedding.weight
 
         # self.context_encoder = ContextEncoder(
@@ -159,7 +158,6 @@ class SegmentalLM(nn.Module):
                 'embedding': shard_embedding.detach().numpy(),
                 'position': None,
             },
-            encoder_input_dropout_rate=config.encoder_input_dropout_rate,
         )
 
         self.segment_decoder = SegmentDecoder(
@@ -169,23 +167,23 @@ class SegmentalLM(nn.Module):
             dropout=config.decoder_dropout_rate,
         )
 
-        # self.segment_decoder = SegmentDecoder2(
-        #     hidden_size=config.hidden_size,
+        # self.segment_decoder = SegmentDecoder(
+        #     hidden_size=config.hidden_size, 
         #     output_size=config.embedding_size,
         #     layer_number=config.decoder_layer_number,
         #     dropout_rate=config.decoder_dropout_rate
         # )
 
         # self.decoder_h_transformation = nn.Linear(
-        #     config.hidden_size,
+        #     config.hidden_size, 
         #     config.decoder_layer_number * config.hidden_size
         # )
 
-        # self.encoder_input_dropout = nn.Dropout(p=config.encoder_input_dropout_rate)
+        self.encoder_input_dropout = nn.Dropout(p=config.encoder_input_dropout_rate)
         self.decoder_input_dropout = nn.Dropout(p=config.decoder_input_dropout_rate)
 
         # self.start_of_segment = nn.Linear(
-        #     config.hidden_size,
+        #     config.hidden_size, 
         #     config.hidden_size
         # )
 
@@ -193,24 +191,38 @@ class SegmentalLM(nn.Module):
         if mode == 'supervised' and segments is None:
             raise ValueError('Supervised mode needs segmented text.')
 
-        #input format: (seq_len, batch_size)
+        #input format: (seq_len, batch_size) 
         x = x.transpose(0, 1).contiguous()
 
-        #transformed format: (seq_len, batch_size)
+        #transformed format: (seq_len, batch_size) 
         max_length = x.size(0)
         batch_size = x.size(1)
 
         loginf=1000000.0
 
+
         max_length = max(lengths)
+
+        # schedule = []
+
+        #<BOS> is at the begin of sentence,
+        #<PUNC> is at the end of sentece
+        #sentence_length = true_length + 2
+        # for j_start in range(1, max_length - 1):
+        #     j_len = min(self.config.max_segment_length, (max_length-1) - j_start)
+        #     j_end = j_start + j_len
+        #     schedule.append((j_start, j_len, j_end))
 
         lm_output = self.context_encoder(x.transpose(0, 1).contiguous())
         inputs = lm_output.embeds.transpose(0, 1)
         encoder_output = lm_output.decoder_hidden.transpose(0, 1)
         # inputs = self.embedding(x)
-        # if self.config.embedding_size != self.config.hidden_size:
-        #     inputs = self.embedding2hidden(inputs)
+        if self.config.embedding_size != self.config.hidden_size:
+            inputs = self.embedding2hidden(inputs)
 
+        # is_single = torch.eq(x, self.config.punc_id).type_as(inputs) * -loginf
+        # is_single = is_single + torch.eq(x, self.config.eng_id).type_as(inputs) * -loginf
+        # is_single = is_single + torch.eq(x, self.config.num_id).type_as(inputs) * -loginf
         is_single = -loginf * ((x == self.config.punc_id) | (x == self.config.eng_id) | (x == self.config.num_id)).type_as(x)
 
         if mode == 'supervised':
@@ -218,15 +230,21 @@ class SegmentalLM(nn.Module):
 
         neg_inf_vector = torch.full_like(inputs[0,:,0], -loginf)
 
+        #log_probability
+        # logpy = [[ neg_inf_vector
+        #           for i in range(self.config.max_segment_length)]
+        #          for j in range(max_length - 1)]
+
+        # logpy[0][0] = torch.zeros_like(neg_inf_vector)
         logpy = neg_inf_vector.repeat(max_length - 1, self.config.max_segment_length, 1)
         logpy[0][0] = 0
 
-        # Context Encoder
+        #Context Encoder
         # inputs = self.encoder_input_dropout(inputs)
         # encoder_init_states = self.context_encoder.get_init_states(batch_size)
         # encoder_output = self.context_encoder(inputs, lengths, encoder_init_states)
-
-        # Make context encoder and segment decoder have different learning rate
+        
+        #Hack, make context encoder and segment decoder have different learning rate
         encoder_output = encoder_output * 0.5
 
         seg_dec_hiddens = self.segment_decoder.gen_start_symbol_hidden(encoder_output)
@@ -252,7 +270,7 @@ class SegmentalLM(nn.Module):
             # decoder_output = self.segment_decoder(decoder_input, decoder_init_states)
             decoder_output = self.segment_decoder(
                 seg_start_hidden=seg_dec_hiddens[j_start-1, :, :].unsqueeze(0),
-                seg_embeds=self.decoder_input_dropout(inputs[j_start:j_end, :, :]),
+                seg_embeds=inputs[j_start:j_end, :, :],
             )
             decoder_output = self.embedding2vocab(decoder_output)
             decoder_logpy = F.log_softmax(decoder_output, dim=2)
@@ -271,44 +289,48 @@ class SegmentalLM(nn.Module):
                 if j == j_start + 1:
                     tmp_logpy = tmp_logpy + is_single[j_start, :]
                 logpy[j_start][j - j_start] = tmp_logpy + decoder_logpy[j - j_start + 1, :, self.config.eos_id]
-
+        
         if mode == 'unsupervised' or mode == 'supervised':
+            
+            #total_log_probability
+            # alpha = [neg_inf_vector for _ in range(max_length - 1)]
 
-            # total_log_probability
-            # log probability for generate <bos> at beginning is 0
+            #log probability for generate <bos> at beginning is 0
+            # alpha[0] = torch.zeros_like(neg_inf_vector)
+
             alpha = neg_inf_vector.repeat(max_length - 1, 1)
             alpha[0] = 0
 
             for j_end in range(1, max_length - 1):
                 logprobs = []
-                for j_start in range(max(0, j_end - self.config.max_segment_length), j_end):
+                for j_start in range(max(0, j_end - self.config.max_segment_length), j_end):                    
                     logprobs.append(alpha[j_start] + logpy[j_start + 1][j_end - j_start - 1])
                 alpha[j_end] =  torch.logsumexp(torch.stack(logprobs), dim=0)
-
+            
             NLL_loss = 0.0
             total_length = 0
-
+            
             # alphas = torch.stack(alpha)
             alphas = alpha
             index = (torch.LongTensor(lengths) - 2).view(1, -1)
-
+            
             if alphas.is_cuda:
                 index = index.cuda()
-
+            
             NLL_loss = - torch.gather(input=alphas, dim=0, index=index)
-
+            
             assert NLL_loss.view(-1).size(0) == batch_size
-
+            
             total_length += sum(lengths) - 2 * batch_size
 
             normalized_NLL_loss = NLL_loss.sum() / float(total_length)
-
+            
             if mode == 'supervised':
                 # Get extra loss for supervised segmentation
-
+                
                 supervised_NLL_loss = 0.0
                 total_length = 0
-
+                
                 for i in range(batch_size):
                     j_start = 1
                     for j_length in segments[i]:
@@ -316,20 +338,20 @@ class SegmentalLM(nn.Module):
                             supervised_NLL_loss = supervised_NLL_loss - logpy[j_start][j_length - 1][i]
                             total_length += j_length
                         j_start += j_length
-
+                        
                 normalized_supervised_NLL_loss = supervised_NLL_loss / float(total_length)
-
+                
                 normalized_NLL_loss = normalized_supervised_NLL_loss * 0.1 + normalized_NLL_loss
-
+                
             return normalized_NLL_loss
-
+          
         elif mode == 'decode':
             ret = []
 
             #<BOS> is at the begin of sentence,
             #<PUNC> is at the end of sentece
-            #sentence_length = true_length + 2
-
+            #sentence_length = true_length + 2 
+            
             for i in range(batch_size):
                 alpha = [-loginf]*(lengths[i] - 1)
                 prev = [-1]*(lengths[i] - 1)
@@ -340,7 +362,7 @@ class SegmentalLM(nn.Module):
                         if logprob > alpha[j_end]:
                             alpha[j_end] = logprob
                             prev[j_end] = j_start
-
+                
                 j_end = lengths[i] - 2
                 segment_lengths = []
                 while j_end > 0:
@@ -377,7 +399,6 @@ class ContextEncoder(nn.Module):
     def forward(self, rnn_input, lengths, init_states):
         if self.input_size != self.hidden_size:
             rnn_input = self.embedding2hidden(rnn_input)
-        self.rnn.flatten_parameters()
         rnn_input = nn.utils.rnn.pack_padded_sequence(rnn_input, lengths)
         output, _ = self.rnn(rnn_input, init_states)
         output, _ = nn.utils.rnn.pad_packed_sequence(output)
@@ -389,7 +410,7 @@ class ContextEncoder(nn.Module):
 
 class SegmentDecoder2(nn.Module):
     def __init__(self, hidden_size, output_size, layer_number, dropout_rate):
-        super(SegmentDecoder2, self).__init__()
+        super(SegmentDecoder, self).__init__()
         self.hidden_size = hidden_size
         self.output_size = output_size
         self.rnn = nn.LSTM(
@@ -403,7 +424,6 @@ class SegmentDecoder2(nn.Module):
         self.output_dropout = nn.Dropout(p=dropout_rate)
 
     def forward(self, rnn_input, init_states):
-        self.rnn.flatten_parameters()
         output, _ = self.rnn(rnn_input, init_states)
         if self.hidden_size != self.output_size:
             output = self.hidden2embedding(output)
@@ -440,32 +460,4 @@ class SegmentDecoder2(nn.Module):
 
 
 
-# %%
 
-if __name__ == '__main__':
-    init_embedding_path = 'data/vocab/embedding.npy'
-    init_embedding = np.load(init_embedding_path)
-    shard_embedding = nn.Parameter(torch.from_numpy(init_embedding).float())
-
-    embedding_size = 256
-    vocab_size = 8677
-    n_heads = None
-    pad_id = 0
-    emb1 = SegEmbedding(
-        d_model=embedding_size,
-        dropout=0.1,
-        vocab_size=vocab_size,
-        init_embedding={
-            'embedding': shard_embedding.detach().numpy(),
-            'position': None,
-        },
-        is_pos=False if n_heads is None else True,
-        max_len=32,
-        pad_id=pad_id,
-    )
-
-
-    emb2 = nn.Embedding.from_pretrained(shard_embedding)
-    voc2 = nn.Linear(embedding_size, vocab_size)
-    voc2.weight = emb2.weight
-# %%
