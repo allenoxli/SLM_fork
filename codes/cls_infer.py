@@ -1,5 +1,6 @@
-
+# %%
 import argparse
+from cmath import isnan
 import subprocess
 
 import numpy as np
@@ -14,6 +15,7 @@ from codes.tokenization import CWSTokenizer
 from codes.dataloader import ClsDataset, InputDataset, OneShotIterator
 from codes._segment_classifier import SegmentClassifier
 
+# %%
 
 def load_pickle(file_name):
     with open(file_name, 'rb') as f:
@@ -29,9 +31,9 @@ start_time  = time()
 
 
 MODE = 'unsupervised'
-DATA = 'cityu'
-MAX_SEG_LEN = 3
-EXTRA = 'classifier'
+DATA = 'as'
+MAX_SEG_LEN = 4
+EXTRA = 'circular'
 
 DATA_PATH = f'./data/{DATA}'
 
@@ -101,6 +103,7 @@ predict_dataloader = data.DataLoader(
 
 device = torch.device('cuda')
 
+# %%
 
 
 def eval(eval_command, attr, out_path):
@@ -154,6 +157,7 @@ fout_slm.close()
 
 eval_command_slm = f'perl data/score.pl {TRAINING_WORDS} {GOLD_TEST} {TEST_OUTPUT}'
 slm_stdout, slm_tail = eval(eval_command_slm, 'SLM', TEST_SCORE)
+# %%
 
 print('\n\n\n')
 ######################
@@ -168,26 +172,29 @@ cls_model.load_state_dict(torch.load(cls_path)['model_state_dict'])
 cls_model.to(device)
 cls_model.eval()
 
-fout_cls = open(CLS_TEST_OUTPUT, 'w')
+# %%
+from tqdm import tqdm
+
+# fout_cls = open(CLS_TEST_OUTPUT, 'w')
 all_res_cls = []
 with torch.no_grad():
     for x_batch, seq_len_batch, uchars_batch, segments_batch, restore_orders in tqdm(predict_dataloader, dynamic_ncols=True):
-        segments_batch_cls = cls_model.generate_segments(x=x_batch.to(device), lengths=seq_len_batch)
+        segments_batch_cls, con = cls_model.generate_segments(x=x_batch.to(device), lengths=seq_len_batch, return_confidence=True)
         for i in restore_orders:
             uchars, segments_cls = uchars_batch[i], segments_batch_cls[i]
-            fout_cls.write(tokenizer.restore(uchars, segments_cls))
+            # fout_cls.write(tokenizer.restore(uchars, segments_cls))
             all_res_cls.append(
                 [
                     x_batch[i],
                     uchars,
                     segments_cls,
+                    seq_len_batch[i],
+                    con,
                 ]
             )
 
-fout_cls.close()
-eval_command_cls = f'perl data/score.pl {TRAINING_WORDS} {GOLD_TEST} {CLS_TEST_OUTPUT}'
-cls_stdout, cls_tail = eval(eval_command_cls, 'CLS', CLS_TEST_SCORE)
-
-
+# fout_cls.close()
+# eval_command_cls = f'perl data/score.pl {TRAINING_WORDS} {GOLD_TEST} {CLS_TEST_OUTPUT}'
+# cls_stdout, cls_tail = eval(eval_command_cls, 'CLS', CLS_TEST_SCORE)
 
 print(f'Process time: {time() - start_time}')

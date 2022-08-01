@@ -63,12 +63,13 @@ class SegmentClassifier(nn.Module):
         pad_id: int,
         encoder: SegmentEncoder = None,
         num_labels: int = 2,
+        label_smoothing: float = 0.0,
         **kwargs,
     ) -> None:
         super().__init__()
 
         self.pad_id = pad_id
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=label_smoothing)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -116,7 +117,7 @@ class SegmentClassifier(nn.Module):
 
         return logits
 
-    def generate_segments(self, x: Tensor, lengths: Tensor):
+    def generate_segments(self, x: Tensor, lengths: Tensor, return_confidence: bool = False):
         r"""Generate the segments for segment model or inference."""
 
         lengths = torch.tensor(lengths)
@@ -126,13 +127,17 @@ class SegmentClassifier(nn.Module):
         # `logits` shape: (B, S, num_labels)
         logits = self(x)
 
-        # `logits` shape: (B, S)
-        logits = logits.argmax(dim=-1)
+        # `probs` shape: (B, S)
+        # `labels` shape: (B, S)
+        probs, labels = logits.max(dim=-1)
 
+        confidence = 0
         batch_segments = []
         # Find the end-of-word boundary.
-        for seq_len, line in zip(lengths, logits):
+        for seq_len, line, prob in zip(lengths, labels, probs):
             line = line[1:seq_len+1]
+
+            confidence += prob[1:seq_len+1].mean() if line.nelement != 0 else 0
 
             segment = []
             seg_len = 1
@@ -147,5 +152,7 @@ class SegmentClassifier(nn.Module):
 
             batch_segments.append(segment)
 
-        return batch_segments
+        if return_confidence == True:
+            return batch_segments, confidence/len(batch_segments)
 
+        return batch_segments

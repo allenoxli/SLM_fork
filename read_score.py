@@ -5,8 +5,9 @@ model_path = 'models_classifier_zip'
 model_path = 'models_iterative_zip'
 model_path = 'models_normal'
 model_path = 'models_iterative'
+# model_path = 'models_circular'
 
-model_path = 'models_normal'
+# model_path = 'models_classifier'
 
 res = {}
 def read_score(file_path):
@@ -38,7 +39,6 @@ for exp in dirs:
         file_path = os.path.join(model_path, exp, file)
         name = 'cls' if 'cls' in file_path else 'seg'
         res[f'{exp}-{name}'] = read_score(file_path)
-
 
 
 

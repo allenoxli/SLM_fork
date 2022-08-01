@@ -102,10 +102,8 @@ def parse_args(args=None):
     parser.add_argument("--iterative_train", action='store_true', help="Whether to run classification.")
     parser.add_argument("--iterative_train_steps", type=int, default=2000)
 
-    parser.add_argument("--label_smoothing", type=float, default=0.15)
 
-
-    parser.add_argument("--seed", type=int, default=42) # 42, 87, 5253
+    parser.add_argument("--seed", type=int, default=42)
 
 
     return parser.parse_args(args)
@@ -249,7 +247,6 @@ def main(args):
                 pad_id=pad_id,
                 encoder=slm.context_encoder,
                 num_labels=2,
-                label_smoothing=args.label_smoothing,
             )
             cls_model.to(device)
             cls_model.train()
@@ -430,7 +427,6 @@ def main(args):
                 pad_id=pad_id,
                 encoder=slm.context_encoder,
                 num_labels=2,
-                label_smoothing=args.label_smoothing,
             )
             cls_model.to(device)
             cls_model.train()

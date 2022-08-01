@@ -246,3 +246,15 @@ labels = all_labels[:idx].long()
 loss = cls_model.loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
 
 ans = logits.argmax(dim=-1)
+
+# %%
+p = 'data/as/test_gold.txt'
+f = open(p, 'r').readlines()
+# idx = 109811
+# f[idx]
+# %%
+a= list(''.join(f[idx].split()))
+# %%
+# from transformers import (BertTokenizerFast)
+tokenizer('')
+# %%

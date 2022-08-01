@@ -140,6 +140,42 @@ python -u -m codes.run \
 
 # rm $MODEL_PATH/checkpoint
 
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "circular" ]
+then
+echo "Start Circular Training......"
+
+rm -rf $MODEL_PATH/*
+cp models_normal/checkpoint $MODEL_PATH
+
+python -u -m codes.run_circular \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --init_embedding_path $INIT_EMBEDDING_PATH \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.005 \
+    --warm_up_steps 800 \
+    --train_steps 10000 \
+    --unsupervised_batch_size 16000 \
+    --predict_batch_size 500 \
+    --valid_batch_size 500 \
+    --segment_token "  " \
+    --cls_train_steps 4000 \
+    --circular_train_steps 7000 \
+    --label_smoothing 0.0
+
+
+# rm $MODEL_PATH/checkpoint
+
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "cls" ]
 then
 echo "Start Unsupervised Training......"

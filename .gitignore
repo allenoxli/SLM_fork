@@ -3,6 +3,7 @@ zip_file
 go*.sh
 models_*
 output
+log
 
 *.pkl
 
