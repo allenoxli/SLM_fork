@@ -217,44 +217,35 @@ for x_batch, seq_len_batch, uchars_batch, segments_batch, restore_orders in vali
     break
 
 # %%
-output = load_pickle('../models/unsupervised-as-3/output.pkl')
+p = 'models_classifier/unsupervised-as-4/output.pkl'
+output = load_pickle(p)
 
 all_input_ids = output['input_ids']
 all_labels = output['labels']
 segments = output['segments']
 
-cls_batch_size = 100
-
-
-
-all_input_ids = torch.stack(all_input_ids, 0)
-all_labels = torch.stack(all_labels, 0)
-idx = 10
-loss = cls_model(all_input_ids[:idx], all_labels[:idx])
-
-output = cls_model.model.encoder(all_input_ids[:idx])
-encoder_outputs = output.decoder_hidden
-pool_output = cls_model.model.pooler(encoder_outputs)
-
-pool_output = (pool_output, )
-sequence_output = pool_output[0]
-
-logits = cls_model.classifier(cls_model.dropout(sequence_output))
-
-labels = all_labels[:idx].long()
-
-loss = cls_model.loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
-
-ans = logits.argmax(dim=-1)
-
 # %%
-p = 'data/as/test_gold.txt'
-f = open(p, 'r').readlines()
-# idx = 109811
-# f[idx]
-# %%
-a= list(''.join(f[idx].split()))
-# %%
-# from transformers import (BertTokenizerFast)
-tokenizer('')
-# %%
+
+def find_boundary(prob, label):
+    seq_len = sum(label!=-100) -2
+    label = label[1:seq_len+1]
+    idx = label.nonzero().squeeze(-1)
+    if idx.nelement() == 0:
+        return [], 0
+    first = idx[0] + 1
+    res = idx[1:] - idx[:-1]
+    segment = torch.cat([first.unsqueeze(0), res], dim=-1)
+    confidence = sum(prob[1:seq_len+1]) / seq_len
+    return segment, confidence
+
+
+labels = all_labels[:]
+probs = torch.randn(len(labels), 32)
+
+zip_info = zip(probs, labels)
+logits = torch.randn(500, 32, 2)
+a, b = logits.max(dim=-1)
+zip_info = zip(a, b)
+tmp = list(zip(*map(lambda x: find_boundary(x[0], x[1]), zip_info)))
+
+

@@ -104,6 +104,7 @@ def parse_args(args=None):
 
     parser.add_argument("--label_smoothing", type=float, default=0.15)
 
+    parser.add_argument("--lm_train_steps", type=int, default=2000)
 
     parser.add_argument("--seed", type=int, default=42) # 42, 87, 5253
 
@@ -234,7 +235,7 @@ def main(args):
             )
 
 
-        if args.iterative_train or args.do_classifier:
+        if args.iterative_train:
             # pass
             logging.info('Initializing classifier model parameters.')
             pad_id = 0
@@ -308,6 +309,12 @@ def main(args):
                 loss = slm(x_batch, seq_len_batch, segments_batch, mode='supervised')
                 log['supervised_loss'] = loss.item()
 
+            if step > args.lm_train_steps:
+                lm_loss = slm.lm_forward(x=x_batch)
+                log['lm_loss'] = lm_loss.item() * 0.5
+                loss += lm_loss * 0.5
+
+
             logs.append(log)
 
             loss.backward()
@@ -329,14 +336,6 @@ def main(args):
             if args.iterative_train and step > args.iterative_train_steps:
                 nn.utils.clip_grad_norm_(cls_model.parameters(), args.gradient_clip)
                 cls_adam_optimizer.step()
-                # if step > args.warm_up_steps:
-                #     cls_adam_optimizer.step()
-                # else:
-                #     # do manually SGD
-                #     for p in cls_model.parameters():
-                #         if p.grad is not None:
-                #             p.data.add_(-args.sgd_learning_rate, p.grad.data)
-
                 cls_scheduler.step()
                 cls_model.zero_grad()
                 cls_adam_optimizer.zero_grad()
@@ -416,6 +415,28 @@ def main(args):
                         os.system('cp %s %s' % (os.path.join(args.save_path, 'cls_checkpoint'),
                                                 os.path.join(args.save_path, 'best-cls_checkpoint')))
 
+        if args.do_classifier:
+            logging.info('Initializing classifier model parameters.')
+            pad_id = 0
+            cls_model = SegmentClassifier(
+                embedding=slm.embedding,
+                d_model=args.cls_d_model,
+                d_ff=None,
+                dropout=args.cls_dropout,
+                n_layers=None,
+                n_heads=None,
+                model_type='segment_encoder',
+                pad_id=pad_id,
+                encoder=slm.context_encoder,
+                num_labels=2,
+                label_smoothing=args.label_smoothing,
+            )
+            cls_model.to(device)
+            cls_model.train()
+
+            cls_adam_optimizer = optim.Adam(cls_model.parameters(), lr=args.cls_adam_learning_rate, betas=(0.9, 0.998))
+            lr_lambda = lambda step: 1 if step < 0.8 * args.cls_train_steps else 0.1
+            cls_scheduler = optim.lr_scheduler.LambdaLR(cls_adam_optimizer, lr_lambda=lr_lambda)
 
         # 先做完 slm 再進行 cls.
         if args.do_classifier:

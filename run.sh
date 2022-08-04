@@ -8,6 +8,7 @@ DATA=$3
 DATA_PATH=data/$DATA
 MAX_SEG_LEN=$4
 EXTRY=$6
+SEED=$7
 
 MODEL_PATH=models/$MODE-$DATA-$MAX_SEG_LEN
 MODEL_PATH=models_$EXTRY/$MODE-$DATA-$MAX_SEG_LEN
@@ -64,7 +65,7 @@ python -u -m codes.run \
     --valid_batch_size 500 \
     --segment_token "  " \
     --cls_train_steps 4000 \
-    --iterative_train_steps 2000
+    --seed $SEED
 
 
 rm $MODEL_PATH/checkpoint
@@ -99,7 +100,8 @@ python -u -m codes.run \
     --valid_batch_size 500 \
     --segment_token "  " \
     --cls_train_steps 4000 \
-    --do_classifier
+    --do_classifier \
+    --seed $SEED
 
 
 rm $MODEL_PATH/checkpoint
@@ -135,7 +137,84 @@ python -u -m codes.run \
     --segment_token "  " \
     --cls_train_steps 4000 \
     --iterative_train_steps 4000 \
-    --iterative_train
+    --iterative_train \
+    --seed $SEED
+    # --do_classifier
+
+# rm $MODEL_PATH/checkpoint
+
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative_1234" ]
+then
+echo "Start Iterative Training......"
+
+# rm -rf $MODEL_PATH/*
+cp models_normal/checkpoint $MODEL_PATH
+
+python -u -m codes.run \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --init_embedding_path $INIT_EMBEDDING_PATH \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.005 \
+    --warm_up_steps 800 \
+    --train_steps 8000 \
+    --unsupervised_batch_size 16000 \
+    --predict_batch_size 500 \
+    --valid_batch_size 500 \
+    --segment_token "  " \
+    --cls_train_steps 4000 \
+    --iterative_train_steps 4000 \
+    --iterative_train \
+    --seed $SEED
+    # --do_classifier
+
+# rm $MODEL_PATH/checkpoint
+
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative_lm" ]
+then
+echo "Start Iterative Training......"
+
+# rm -rf $MODEL_PATH/*
+cp models_normal/checkpoint $MODEL_PATH
+
+python -u -m codes.run_lm \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --init_embedding_path $INIT_EMBEDDING_PATH \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.005 \
+    --warm_up_steps 800 \
+    --train_steps 8000 \
+    --unsupervised_batch_size 16000 \
+    --predict_batch_size 500 \
+    --valid_batch_size 500 \
+    --segment_token "  " \
+    --cls_train_steps 4000 \
+    --iterative_train_steps 4000 \
+    --iterative_train \
+    --label_smoothing 0.0 \
+    --lm_train_steps 2000 \
+    --seed $SEED
     # --do_classifier
 
 # rm $MODEL_PATH/checkpoint

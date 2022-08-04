@@ -5,7 +5,10 @@ model_path = 'models_classifier_zip'
 model_path = 'models_iterative_zip'
 model_path = 'models_normal'
 model_path = 'models_iterative'
-# model_path = 'models_circular'
+model_path = 'models_iterative_lm'
+model_path = 'models_iterative_1234'
+model_path = 'models_iterative'
+model_path = 'models_circular'
 
 # model_path = 'models_classifier'
 
@@ -20,12 +23,19 @@ def read_score(file_path):
             precision = line.split()[-1]
         if '=== TOTAL TRUE WORDS RECALL' in line:
             recall = line.split()[-1]
+    try:
+        return {
+            'f1': float(f1)*100,
+            'precision': float(precision)*100,
+            'recall': float(recall)*100,
+        }
+    except:
+        return {
+            'f1': .0,
+            'precision': .0,
+            'recall': .0,
+        }
 
-    return {
-        'f1': float(f1)*100,
-        'precision': float(precision)*100,
-        'recall': float(recall)*100,
-    }
 
 
 

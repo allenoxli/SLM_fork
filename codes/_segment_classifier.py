@@ -1,4 +1,6 @@
 r"""Train a binary classifier.(word boundary or not.)"""
+from itertools import starmap
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -131,28 +133,43 @@ class SegmentClassifier(nn.Module):
         # `labels` shape: (B, S)
         probs, labels = logits.max(dim=-1)
 
-        confidence = 0
-        batch_segments = []
-        # Find the end-of-word boundary.
-        for seq_len, line, prob in zip(lengths, labels, probs):
-            line = line[1:seq_len+1]
+        def find_boundary(prob, label, seq_len):
+            label = label[1:seq_len+1]
+            idx = label.nonzero().squeeze(-1)
+            if idx.nelement() == 0:
+                return [], 0
+            first = idx[0] + 1
+            res = idx[1:] - idx[:-1]
+            segment = torch.cat([first.unsqueeze(0), res], dim=-1)
+            confidence = sum(prob[1:seq_len+1]) / seq_len
+            return segment, confidence
 
-            confidence += prob[1:seq_len+1].mean() if line.nelement != 0 else 0
+        tmp = list(zip(*starmap(lambda *x: find_boundary(*x), zip(probs, labels, lengths))))
 
-            segment = []
-            seg_len = 1
-            for i in range(line.size(0)):
-                if line[i] == 1 or i == line.size(0) - 1:
-                    segment.append(seg_len)
-                    seg_len = 1
-                    continue
-                seg_len += 1
+        batch_segments, confidence = tmp[0], tmp[1]
 
-            assert sum(segment) == seq_len
+        # confidence = 0
+        # batch_segments = []
+        # # Find the end-of-word boundary.
+        # for seq_len, line, prob in zip(lengths, labels, probs):
+        #     line = line[1:seq_len+1]
 
-            batch_segments.append(segment)
+        #     confidence += prob[1:seq_len+1].mean() if line.nelement != 0 else 0
+
+        #     segment = []
+        #     seg_len = 1
+        #     for i in range(line.size(0)):
+        #         if line[i] == 1 or i == line.size(0) - 1:
+        #             segment.append(seg_len)
+        #             seg_len = 1
+        #             continue
+        #         seg_len += 1
+
+        #     assert sum(segment) == seq_len
+
+        #     batch_segments.append(segment)
 
         if return_confidence == True:
-            return batch_segments, confidence/len(batch_segments)
+            return batch_segments, sum(confidence)/len(batch_segments)
 
         return batch_segments

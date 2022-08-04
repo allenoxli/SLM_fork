@@ -357,6 +357,23 @@ class SegmentalLM(nn.Module):
         else:
             raise ValueError('Mode %s not supported' % mode)
 
+    def lm_forward(self, x: torch.Tensor):
+
+        lm_output = self.context_encoder(x)
+        # shape: (B, S, d_model)
+        encoder_output = lm_output.decoder_hidden
+
+        # `logits` shape: (B, S, V)
+        logits = F.softmax(self.embedding2vocab(encoder_output), dim=-1)
+        shift_logits = logits[:, :-1]
+        shift_labels = x[:, 1:]
+
+        loss = F.cross_entropy(shift_logits.reshape(-1, logits.size(-1)), shift_labels.reshape(-1), ignore_index=0)
+
+        return loss
+
+
+
 class ContextEncoder(nn.Module):
     def __init__(self, input_size, hidden_size, layer_number, dropout_rate):
         super(ContextEncoder, self).__init__()
