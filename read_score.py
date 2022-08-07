@@ -1,4 +1,12 @@
+
+import argparse
+import re
 import os
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--name', type=str, default='models_normal_87')
+
+args = parser.parse_args()
 
 
 model_path = 'models_classifier_zip'
@@ -9,6 +17,10 @@ model_path = 'models_iterative_lm'
 model_path = 'models_iterative_1234'
 model_path = 'models_iterative'
 model_path = 'models_circular'
+model_path = 'models_normal_87'
+
+
+model_path = args.name
 
 # model_path = 'models_classifier'
 
@@ -37,16 +49,18 @@ def read_score(file_path):
         }
 
 
-
-
 dirs = os.listdir(model_path)
 for exp in dirs:
     if os.path.isfile(os.path.join(model_path, exp)):
         continue
     for file in os.listdir(os.path.join(model_path, exp)):
+        file_path = os.path.join(model_path, exp, file)
+        if file == 'train.log':
+            line = open(file_path, 'r').readlines()[0]
+            seed = re.search('seed=\d+', line).group()
+            print(f'{seed}, {exp}')
         if file not in ['score.txt', 'score_cls.txt']:
             continue
-        file_path = os.path.join(model_path, exp, file)
         name = 'cls' if 'cls' in file_path else 'seg'
         res[f'{exp}-{name}'] = read_score(file_path)
 
@@ -70,9 +84,11 @@ def display(res, name):
     return out_str
 
 
+
 res = sorted(res.items(), key=lambda x: x[0])
 
-file_str = f'=== {model_path} ===\n'
+
+file_str = f'\n=== {model_path} ===\n'
 file_str += display(res, 'seg')
 file_str += display(res, 'cls')
 

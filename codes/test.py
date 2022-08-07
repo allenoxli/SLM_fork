@@ -236,16 +236,59 @@ def find_boundary(prob, label):
     res = idx[1:] - idx[:-1]
     segment = torch.cat([first.unsqueeze(0), res], dim=-1)
     confidence = sum(prob[1:seq_len+1]) / seq_len
-    return segment, confidence
+    return segment.tolist(), confidence
 
-
+from time import time
+s = time()
 labels = all_labels[:]
 probs = torch.randn(len(labels), 32)
 
 zip_info = zip(probs, labels)
-logits = torch.randn(500, 32, 2)
-a, b = logits.max(dim=-1)
-zip_info = zip(a, b)
+# logits = torch.randn(500, 32, 2)
+# a, b = logits.max(dim=-1)
+# zip_info = zip(a, b)
 tmp = list(zip(*map(lambda x: find_boundary(x[0], x[1]), zip_info)))
 
 
+print(time() - s)
+
+# %%
+def method1(labels):
+    lengths = [len(i)-2 for i in labels]
+    batch_segments = []
+    for seq_len, line in zip(lengths, labels):
+        # line = line[1:seq_len+1]
+        seq_len = sum(line!=-100) -2
+        line = line[1: seq_len+1]
+        segment = []
+        seg_len = 1
+        for i in range(line.size(0)):
+            if line[i] == 1 or i == line.size(0) - 1:
+                segment.append(seg_len)
+                seg_len = 1
+                continue
+            seg_len += 1
+        # if line.nelement() == 0:
+        #     batch_segments.append([])
+        #     continue
+        # idx = line.nonzero().squeeze(-1)
+        # first = idx[0] + 1
+        # res = idx[1:] - idx[:-1]
+        # segment = torch.cat([first.unsqueeze(0), res], dim=-1)
+        assert sum(segment) == seq_len
+
+        batch_segments.append(segment)
+    return batch_segments
+
+s_time = time()
+all_segments = []
+batch_size = 500
+for i in range(0, len(all_labels), batch_size):
+    tmp = method1(all_labels[i: i+batch_size])
+    all_segments.extend(tmp)
+print(time() - s_time)
+
+# %%
+import os
+os.system('cp models_zz/unsupervised-as-3/config.json output')
+# %%

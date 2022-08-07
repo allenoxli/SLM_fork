@@ -11,10 +11,8 @@ from __future__ import print_function
 
 # %%
 import argparse
-import six
 import logging
 import os
-import random
 import subprocess
 from time import time
 
@@ -100,15 +98,12 @@ def parse_args(args=None):
     parser.add_argument("--cls_d_model", type=int, default=256)
     parser.add_argument("--cls_dropout", type=int, default=0.1)
 
-    parser.add_argument("--iterative_train", action='store_true', help="Whether to run classification.")
-    parser.add_argument("--iterative_train_steps", type=int, default=2000)
-    
     parser.add_argument("--label_smoothing", type=float, default=0.15)
 
     parser.add_argument("--circular_train_steps", type=int, default=6000)
+    # parser.add_argument("--init_slm_checkpoint", type=str, default=None, help="Path to init slm checkpoint")
 
-    parser.add_argument("--seed", type=int, default=87) # 42, 87
-
+    parser.add_argument("--seed", type=int, default=87) # 42, 87, 1234
 
     return parser.parse_args(args)
 
@@ -238,15 +233,28 @@ def main(args):
     lr_lambda = lambda step: 1 if step < 0.8 * args.cls_train_steps else 0.1
     cls_scheduler = optim.lr_scheduler.LambdaLR(cls_adam_optimizer, lr_lambda=lr_lambda)
 
-
-    logging.info('Ramdomly Initializing SLM parameters...')
     global_step = 0
     best_F_score = 0
     best_F_score_cls = 0
 
+    init_slm_checkpoint = f'models_normal_{args.seed}/{MODE}-{DATA}-{MAX_SEG_LEN}/best-checkpoint'
+    if os.path.exists(init_slm_checkpoint):
+        logging.info('Loading SLM checkpoint %s...' % init_slm_checkpoint)
+        print('==========')
+        print('LOAD')
+        print('==========')
+        checkpoint = torch.load(init_slm_checkpoint)
+        global_step = checkpoint['global_step']
+        best_F_score = checkpoint['best_F_score']
+        slm.load_state_dict(checkpoint['model_state_dict'])
+        adam_optimizer.load_state_dict(checkpoint['adam_optimizer'])
+        os.system(f'cp {init_slm_checkpoint} {args.save_path}')
+
+    for step in range(global_step):
+        scheduler.step()
+
     # SLM traiing.
     # Start to training.
-    # best_F_score, best_F_score_cls = train_slm_iterative_complete(args, device, tokenizer, slm_config, slm, logs, SCRIPT, TRAINING_WORDS, GOLD_TEST, VALID_OUTPUT, VALID_SCORE, CLS_VALID_OUTPUT, CLS_VALID_SCORE, adam_optimizer, scheduler, unsupervised_data_iterator, valid_dataloader, cls_model, cls_adam_optimizer, cls_scheduler, global_step, best_F_score, best_F_score_cls)
     # Tensrboard writer.
     writer = SummaryWriter(args.save_path)
 
@@ -271,8 +279,8 @@ def main(args):
                     label = torch.zeros(input_ids.size(0))
                     e_idx = (input_ids == 5).nonzero(as_tuple=True)[0]
                     label[e_idx+1:].fill_(-100)
-                        # `label` including the labels of <bos> and <eos> token.
-                        # `-1+1` for correct segment index and BOS token.
+                    # `label` including the labels of <bos> and <eos> token.
+                    # `-1+1` for correct segment index and BOS token.
                     idx = [sum(segment[:i])-1+1 for i in range(1, len(segment)+1)]
                     label[idx] = 1
                     batch_labels.append(label)
@@ -289,8 +297,6 @@ def main(args):
         if step > args.circular_train_steps:
             with torch.no_grad():
                 segments_batch_cls, confidence = cls_model.generate_segments(x=x_batch, lengths=seq_len_batch, return_confidence=True)
-            # print(f'{len(segments_batch_cls)=}')
-            # print(f'{confidence=}')
             circular_loss = slm(x_batch, seq_len_batch, segments_batch_cls, mode='supervised')
             log['circular_loss'] = circular_loss.item()
             log['confidence'] = confidence.item()
@@ -335,20 +341,19 @@ def main(args):
 
         if (step % args.save_every_steps == 0) or (step == args.train_steps - 1):
             logging.info('Saving checkpoint %s...' % args.save_path)
-            slm_config.to_json_file(os.path.join(args.save_path, 'config.json'))
             torch.save({
-                        'global_step': step,
-                        'best_F_score': best_F_score,
-                        'model_state_dict': slm.state_dict(),
-                        'adam_optimizer': adam_optimizer.state_dict()
-                    }, os.path.join(args.save_path, 'checkpoint'))
+                'global_step': step,
+                'best_F_score': best_F_score,
+                'model_state_dict': slm.state_dict(),
+                'adam_optimizer': adam_optimizer.state_dict()
+            }, os.path.join(args.save_path, 'checkpoint'))
             if step > args.cls_train_steps:
                 torch.save({
-                            'global_step': step,
-                            'best_F_score': best_F_score_cls,
-                            'model_state_dict': cls_model.state_dict(),
-                            'adam_optimizer': cls_adam_optimizer.state_dict()
-                        }, os.path.join(args.save_path, 'cls_checkpoint'))
+                    'global_step': step,
+                    'best_F_score': best_F_score_cls,
+                    'model_state_dict': cls_model.state_dict(),
+                    'adam_optimizer': cls_adam_optimizer.state_dict()
+                }, os.path.join(args.save_path, 'cls_checkpoint'))
 
             if args.do_valid:
                 slm.eval()
@@ -390,13 +395,12 @@ def main(args):
                 logging.info('Overwriting best checkpoint....')
                 os.system('cp %s %s' % (os.path.join(args.save_path, 'checkpoint'),
                                                 os.path.join(args.save_path, 'best-checkpoint')))
-                # cls part.
-            if step > args.cls_train_steps:
-                if (F_score_cls > best_F_score_cls):
-                    best_F_score_cls = F_score_cls
-                    logging.info('Overwriting best cls-checkpoint....')
-                    os.system('cp %s %s' % (os.path.join(args.save_path, 'cls_checkpoint'),
-                                                    os.path.join(args.save_path, 'best-cls_checkpoint')))
+            # cls part.
+            if step > args.cls_train_steps and F_score_cls > best_F_score_cls:
+                best_F_score_cls = F_score_cls
+                logging.info('Overwriting best cls-checkpoint....')
+                os.system('cp %s %s' % (os.path.join(args.save_path, 'cls_checkpoint'),
+                                                os.path.join(args.save_path, 'best-cls_checkpoint')))
 
     if args.do_predict:
         logging.info('Prepare prediction dataloader')
@@ -412,7 +416,7 @@ def main(args):
             collate_fn=InputDataset.padding_collate
         )
 
-        # Restore model from best checkpoint
+        # Restore model from best checkpoint.
         logging.info('Loading checkpoint %s...' % (args.init_checkpoint or args.save_path))
         checkpoint = torch.load(os.path.join(args.init_checkpoint or args.save_path, 'best-checkpoint'))
         step = checkpoint['global_step']
@@ -449,12 +453,9 @@ def main(args):
 
         logging.info('Global step of best-checkpoint: %s' % step)
 
-        cls_model.eval()
-
         CLS_PREDICT_OUTPUT = f'{MODEL_PATH}/prediction_cls.txt'
         cls_model.eval()
         fout_cls = open(CLS_PREDICT_OUTPUT, 'w')
-
 
         with torch.no_grad():
             for x_batch, seq_len_batch, uchars_batch, segments_batch, restore_orders in predict_dataloader:
@@ -516,6 +517,7 @@ def first_part(args):
 
     slm_config = model.SLMConfig.from_json_file(args.config_file)
     logging.info('Config Info:\n%s' % slm_config.to_json_string())
+    slm_config.to_json_file(os.path.join(args.save_path, 'config.json'))
 
     slm = model.SegmentalLM(
         config=slm_config,

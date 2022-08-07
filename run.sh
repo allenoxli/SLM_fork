@@ -11,6 +11,7 @@ EXTRY=$6
 SEED=$7
 
 MODEL_PATH=models/$MODE-$DATA-$MAX_SEG_LEN
+MODEL_PATH=models_"$EXTRY"_"$SEED"/$MODE-$DATA-$MAX_SEG_LEN
 MODEL_PATH=models_$EXTRY/$MODE-$DATA-$MAX_SEG_LEN
 
 
@@ -31,7 +32,7 @@ VALID_SCORE=$MODEL_PATH/valid_score.txt
 VALID_OUTPUT_CLS=$MODEL_PATH/valid_prediction_cls.txt
 VALID_SCORE_CLS=$MODEL_PATH/valid_score_cls.txt
 
-CONFIG_FILE=models_normal/slm_"$DATA"_"$MAX_SEG_LEN"_config.json
+CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config.json
 INIT_EMBEDDING_PATH=data/vocab/embedding.npy
 VOCAB_FILE=data/vocab/vocab.txt
 
@@ -39,8 +40,9 @@ if [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "normal
 then
 echo "Start Unsupervised Training......"
 
+mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-cp models_normal/checkpoint $MODEL_PATH
+cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -59,12 +61,11 @@ python -u -m codes.run \
     --sgd_learning_rate 16.0 \
     --adam_learning_rate 0.005 \
     --warm_up_steps 800 \
-    --train_steps 4000 \
+    --train_steps 8000 \
     --unsupervised_batch_size 16000 \
     --predict_batch_size 500 \
     --valid_batch_size 500 \
     --segment_token "  " \
-    --cls_train_steps 4000 \
     --seed $SEED
 
 
@@ -74,8 +75,9 @@ elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "clas
 then
 echo "Start Unsupervised Training......"
 
-# rm -rf $MODEL_PATH/*
-cp models_normal/checkpoint $MODEL_PATH
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
+# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -104,14 +106,14 @@ python -u -m codes.run \
     --seed $SEED
 
 
-rm $MODEL_PATH/checkpoint
+# rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative" ]
 then
 echo "Start Iterative Training......"
 
 # rm -rf $MODEL_PATH/*
-cp models_normal/checkpoint $MODEL_PATH
+cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -139,44 +141,6 @@ python -u -m codes.run \
     --iterative_train_steps 4000 \
     --iterative_train \
     --seed $SEED
-    # --do_classifier
-
-# rm $MODEL_PATH/checkpoint
-
-elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative_1234" ]
-then
-echo "Start Iterative Training......"
-
-# rm -rf $MODEL_PATH/*
-cp models_normal/checkpoint $MODEL_PATH
-
-python -u -m codes.run \
-    --use_cuda \
-    --do_unsupervised \
-    --do_valid \
-    --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
-    --predict_input $TEST_DATA \
-    --predict_output $TEST_OUTPUT \
-    --valid_inputs $VALID_DATA \
-    --valid_output $VALID_OUTPUT \
-    --vocab_file $VOCAB_FILE \
-    --config_file $CONFIG_FILE \
-    --init_embedding_path $INIT_EMBEDDING_PATH \
-    --save_path "$MODEL_PATH" \
-    --sgd_learning_rate 16.0 \
-    --adam_learning_rate 0.005 \
-    --warm_up_steps 800 \
-    --train_steps 8000 \
-    --unsupervised_batch_size 16000 \
-    --predict_batch_size 500 \
-    --valid_batch_size 500 \
-    --segment_token "  " \
-    --cls_train_steps 4000 \
-    --iterative_train_steps 4000 \
-    --iterative_train \
-    --seed $SEED
-    # --do_classifier
 
 # rm $MODEL_PATH/checkpoint
 
@@ -185,7 +149,7 @@ then
 echo "Start Iterative Training......"
 
 # rm -rf $MODEL_PATH/*
-cp models_normal/checkpoint $MODEL_PATH
+cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run_lm \
     --use_cuda \
@@ -215,7 +179,6 @@ python -u -m codes.run_lm \
     --label_smoothing 0.0 \
     --lm_train_steps 2000 \
     --seed $SEED
-    # --do_classifier
 
 # rm $MODEL_PATH/checkpoint
 
@@ -224,7 +187,7 @@ then
 echo "Start Circular Training......"
 
 rm -rf $MODEL_PATH/*
-cp models_normal/checkpoint $MODEL_PATH
+cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run_circular \
     --use_cuda \
@@ -250,17 +213,18 @@ python -u -m codes.run_circular \
     --segment_token "  " \
     --cls_train_steps 4000 \
     --circular_train_steps 7000 \
-    --label_smoothing 0.0
+    --label_smoothing 0.0 \
+    --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
+rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "cls" ]
 then
 echo "Start Unsupervised Training......"
 
 # rm -rf $MODEL_PATH/*
-cp models_normal/checkpoint $MODEL_PATH
+cp models/checkpoint $MODEL_PATH
 
 python -u codes/run_cls.py \
     --use_cuda \

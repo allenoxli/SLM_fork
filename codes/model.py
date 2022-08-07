@@ -326,10 +326,6 @@ class SegmentalLM(nn.Module):
         elif mode == 'decode':
             ret = []
 
-            #<BOS> is at the begin of sentence,
-            #<PUNC> is at the end of sentece
-            #sentence_length = true_length + 2
-
             for i in range(batch_size):
                 alpha = [-loginf]*(lengths[i] - 1)
                 prev = [-1]*(lengths[i] - 1)

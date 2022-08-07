@@ -180,169 +180,344 @@ def main(args):
     CLS_TEST_OUTPUT = f'{MODEL_PATH}/prediction_cls.txt'
     CLS_TEST_SCORE = f'{MODEL_PATH}/score_cls.txt'
 
-    if args.do_unsupervised or args.do_supervised:
+    # Optimizer and scheduler.
+    adam_optimizer = optim.Adam(slm.parameters(), lr=args.adam_learning_rate, betas=(0.9, 0.998))
+    lr_lambda = lambda step: 1 if step < 0.8 * args.train_steps else 0.1
+    scheduler = optim.lr_scheduler.LambdaLR(adam_optimizer, lr_lambda=lr_lambda)
 
-        # Optimizer and scheduler.
-        adam_optimizer = optim.Adam(slm.parameters(), lr=args.adam_learning_rate, betas=(0.9, 0.998))
-        lr_lambda = lambda step: 1 if step < 0.8 * args.train_steps else 0.1
-        scheduler = optim.lr_scheduler.LambdaLR(adam_optimizer, lr_lambda=lr_lambda)
+    # Dataloader. (unsupervised, supervised, valid)
+    if args.do_unsupervised:
+        logging.info('Prepare unsupervised dataloader')
+        unsupervsied_dataset = InputDataset(
+            args.unsegmented,
+            tokenizer,
+            is_training=True,
+            batch_token_size=args.unsupervised_batch_size
+        )
+        unsupervised_dataloader = data.DataLoader(
+            unsupervsied_dataset,
+            num_workers=args.cpu_num,
+            batch_size=1,
+            shuffle=False,
+            collate_fn=InputDataset.single_collate
+        )
+        unsupervised_data_iterator = OneShotIterator(unsupervised_dataloader)
 
-        # Dataloader. (unsupervised, supervised, valid)
-        if args.do_unsupervised:
-            logging.info('Prepare unsupervised dataloader')
-            unsupervsied_dataset = InputDataset(
-                args.unsegmented,
-                tokenizer,
-                is_training=True,
-                batch_token_size=args.unsupervised_batch_size
-            )
-            unsupervised_dataloader = data.DataLoader(
-                unsupervsied_dataset,
-                num_workers=args.cpu_num,
-                batch_size=1,
-                shuffle=False,
-                collate_fn=InputDataset.single_collate
-            )
-            unsupervised_data_iterator = OneShotIterator(unsupervised_dataloader)
+    if args.do_supervised:
+        logging.info('Prepare supervised dataloader')
+        supervsied_dataset = InputDataset(
+            args.segmented,
+            tokenizer,
+            is_training=True,
+            batch_token_size=args.supervised_batch_size
+        )
+        supervised_dataloader = data.DataLoader(
+            supervsied_dataset,
+            num_workers=args.cpu_num,
+            batch_size=1,
+            shuffle=False,
+            collate_fn=InputDataset.single_collate
+        )
+        supervised_data_iterator = OneShotIterator(supervised_dataloader)
 
-        if args.do_supervised:
-            logging.info('Prepare supervised dataloader')
-            supervsied_dataset = InputDataset(
-                args.segmented,
-                tokenizer,
-                is_training=True,
-                batch_token_size=args.supervised_batch_size
-            )
-            supervised_dataloader = data.DataLoader(
-                supervsied_dataset,
-                num_workers=args.cpu_num,
-                batch_size=1,
-                shuffle=False,
-                collate_fn=InputDataset.single_collate
-            )
-            supervised_data_iterator = OneShotIterator(supervised_dataloader)
+    if args.do_valid:
+        logging.info('Prepare validation dataloader')
+        valid_dataset = InputDataset(args.valid_inputs, tokenizer)
+        valid_dataloader = data.DataLoader(
+            dataset=valid_dataset,
+            shuffle=False,
+            batch_size=args.valid_batch_size,
+            num_workers=0,
+            collate_fn=InputDataset.padding_collate
+        )
 
-        if args.do_valid:
-            logging.info('Prepare validation dataloader')
-            valid_dataset = InputDataset(args.valid_inputs, tokenizer)
-            valid_dataloader = data.DataLoader(
-                dataset=valid_dataset,
-                shuffle=False,
-                batch_size=args.valid_batch_size,
-                num_workers=0,
-                collate_fn=InputDataset.padding_collate
-            )
+    if args.iterative_train or args.do_classifier:
+        # pass
+        logging.info('Initializing classifier model parameters.')
+        pad_id = 0
+        cls_model = SegmentClassifier(
+            embedding=None, #slm.embedding,
+            d_model=args.cls_d_model,
+            d_ff=None,
+            dropout=args.cls_dropout,
+            n_layers=None,
+            n_heads=None,
+            model_type='segment_encoder',
+            pad_id=pad_id,
+            encoder=slm.context_encoder,
+            num_labels=2,
+            label_smoothing=args.label_smoothing,
+        )
+        cls_model.to(device)
+        cls_model.train()
+
+        cls_adam_optimizer = optim.Adam(cls_model.parameters(), lr=args.cls_adam_learning_rate, betas=(0.9, 0.998))
+        lr_lambda = lambda step: 1 if step < 0.8 * args.cls_train_steps else 0.1
+        cls_scheduler = optim.lr_scheduler.LambdaLR(cls_adam_optimizer, lr_lambda=lr_lambda)
 
 
-        if args.iterative_train or args.do_classifier:
-            # pass
-            logging.info('Initializing classifier model parameters.')
-            pad_id = 0
-            cls_model = SegmentClassifier(
-                embedding=None, #slm.embedding,
-                d_model=args.cls_d_model,
-                d_ff=None,
-                dropout=args.cls_dropout,
-                n_layers=None,
-                n_heads=None,
-                model_type='segment_encoder',
-                pad_id=pad_id,
-                encoder=slm.context_encoder,
-                num_labels=2,
-                label_smoothing=args.label_smoothing,
-            )
-            cls_model.to(device)
+    global_step = 0
+    best_F_score = 0
+    best_F_score_cls = 0
+
+    init_slm_checkpoint = f'models_normal_{args.seed}/{MODE}-{DATA}-{MAX_SEG_LEN}/best-checkpoint'
+    if os.path.exists(init_slm_checkpoint):
+        logging.info('Loading SLM checkpoint %s...' % init_slm_checkpoint)
+        print('==========')
+        print('LOAD')
+        print('==========')
+        checkpoint = torch.load(init_slm_checkpoint)
+        global_step = checkpoint['global_step']
+        best_F_score = checkpoint['best_F_score']
+        slm.load_state_dict(checkpoint['model_state_dict'])
+        adam_optimizer.load_state_dict(checkpoint['adam_optimizer'])
+        os.system(f'cp {init_slm_checkpoint} {args.save_path}')
+
+    for step in range(global_step):
+        scheduler.step()
+
+    # SLM traiing.
+    # Start to training.
+    for step in range(global_step, args.train_steps):
+
+        slm.train()
+        # cls part.
+        if args.iterative_train and step > args.iterative_train_steps:
             cls_model.train()
 
-            cls_adam_optimizer = optim.Adam(cls_model.parameters(), lr=args.cls_adam_learning_rate, betas=(0.9, 0.998))
-            lr_lambda = lambda step: 1 if step < 0.8 * args.cls_train_steps else 0.1
-            cls_scheduler = optim.lr_scheduler.LambdaLR(cls_adam_optimizer, lr_lambda=lr_lambda)
+        log = {}
 
+        if args.do_unsupervised:
+            x_batch, seq_len_batch, uchars_batch, segments_batch = next(unsupervised_data_iterator)
+            x_batch = x_batch.to(device)
+            loss = slm(x_batch, seq_len_batch, mode='unsupervised')
+            log['unsupervised_loss'] = loss.item()
 
-        logging.info('Ramdomly Initializing SLM parameters...')
-        global_step = 0
-        best_F_score = 0
-        best_F_score_cls = 0
-
-        # SLM traiing.
-        # Start to training.
-        for step in range(global_step, args.train_steps):
-
-            slm.train()
             # cls part.
             if args.iterative_train and step > args.iterative_train_steps:
-                cls_model.train()
+                with torch.no_grad():
+                    segments_batch_slm = slm(x_batch, seq_len_batch, mode='decode')
+                    batch_labels = []
+                    for input_ids, segment in zip(x_batch, segments_batch_slm):
+                        label = torch.zeros(input_ids.size(0))
+                        e_idx = (input_ids == 5).nonzero(as_tuple=True)[0]
+                        label[e_idx+1:].fill_(-100)
+                        # `label` including the labels of <bos> and <eos> token.
+                        # `-1+1` for correct segment index and BOS token.
+                        idx = [sum(segment[:i])-1+1 for i in range(1, len(segment)+1)]
+                        label[idx] = 1
+                        batch_labels.append(label)
 
-            log = {}
+                labels = torch.stack(batch_labels, 0).long()
+                cls_loss = cls_model(x=x_batch, labels=labels.to(device))
+                log['cls_loss'] = cls_loss.item()
 
-            if args.do_unsupervised:
-                x_batch, seq_len_batch, uchars_batch, segments_batch = next(unsupervised_data_iterator)
-                x_batch = x_batch.to(device)
-                loss = slm(x_batch, seq_len_batch, mode='unsupervised')
-                log['unsupervised_loss'] = loss.item()
+                loss += cls_loss
 
-                # cls part.
+        elif args.do_supervised:
+            x_batch, seq_len_batch, uchars_batch, segments_batch = next(supervised_data_iterator)
+            x_batch = x_batch.to(device)
+            loss = slm(x_batch, seq_len_batch, segments_batch, mode='supervised')
+            log['supervised_loss'] = loss.item()
+
+        logs.append(log)
+
+        loss.backward()
+        nn.utils.clip_grad_norm_(slm.parameters(), args.gradient_clip)
+
+        if step > args.warm_up_steps:
+            adam_optimizer.step()
+        else:
+            # do manually SGD
+            for p in slm.parameters():
+                if p.grad is not None:
+                    p.data.add_(-args.sgd_learning_rate, p.grad.data)
+
+        scheduler.step()
+        slm.zero_grad()
+        adam_optimizer.zero_grad()
+
+        # cls part.
+        if args.iterative_train and step > args.iterative_train_steps:
+            nn.utils.clip_grad_norm_(cls_model.parameters(), args.gradient_clip)
+            cls_adam_optimizer.step()
+            # if step > args.warm_up_steps:
+            #     cls_adam_optimizer.step()
+            # else:
+            #     # do manually SGD
+            #     for p in cls_model.parameters():
+            #         if p.grad is not None:
+            #             p.data.add_(-args.sgd_learning_rate, p.grad.data)
+
+            cls_scheduler.step()
+            cls_model.zero_grad()
+            cls_adam_optimizer.zero_grad()
+
+        if step % args.log_every_steps == 0:
+            logging.info("global_step = %s" % step)
+            if len(logs) > 0:
+                for key in logs[0]:
+                    logging.info("%s = %f" % (key, sum([log[key] for log in logs])/len(logs)))
+            else:
+                logging.info("Currently no metrics available")
+            logs = []
+
+        if (step % args.save_every_steps == 0) or (step == args.train_steps - 1):
+            logging.info('Saving checkpoint %s...' % args.save_path)
+            slm_config.to_json_file(os.path.join(args.save_path, 'config.json'))
+            torch.save({
+                'global_step': step,
+                'best_F_score': best_F_score,
+                'model_state_dict': slm.state_dict(),
+                'adam_optimizer': adam_optimizer.state_dict()
+            }, os.path.join(args.save_path, 'checkpoint'))
+            if args.iterative_train and step > args.iterative_train_steps:
+                torch.save({
+                    'global_step': step,
+                    'best_F_score': best_F_score_cls,
+                    'model_state_dict': cls_model.state_dict(),
+                    'adam_optimizer': cls_adam_optimizer.state_dict()
+                }, os.path.join(args.save_path, 'cls_checkpoint'))
+
+            if args.do_valid:
+                slm.eval()
                 if args.iterative_train and step > args.iterative_train_steps:
-                    with torch.no_grad():
+                    cls_model.eval()
+
+                fout_slm = open(VALID_OUTPUT, 'w')
+                fout_cls = open(CLS_VALID_OUTPUT, 'w')
+
+                with torch.no_grad():
+                    for x_batch, seq_len_batch, uchars_batch, segments_batch, restore_orders in valid_dataloader:
+                        x_batch = x_batch.to(device)
                         segments_batch_slm = slm(x_batch, seq_len_batch, mode='decode')
-                        batch_labels = []
-                        for input_ids, segment in zip(x_batch, segments_batch_slm):
-                            label = torch.zeros(input_ids.size(0))
-                            e_idx = (input_ids == 5).nonzero(as_tuple=True)[0]
-                            label[e_idx+1:].fill_(-100)
-                            # `label` including the labels of <bos> and <eos> token.
-                            # `-1+1` for correct segment index and BOS token.
-                            idx = [sum(segment[:i])-1+1 for i in range(1, len(segment)+1)]
-                            label[idx] = 1
-                            batch_labels.append(label)
+                        # cls part.
+                        if args.iterative_train and step > args.iterative_train_steps:
+                            segments_batch_cls = cls_model.generate_segments(x=x_batch, lengths=seq_len_batch)
+                        for i in restore_orders:
+                            uchars, segments_slm = uchars_batch[i], segments_batch_slm[i]
+                            fout_slm.write(tokenizer.restore(uchars, segments_slm))
+                            # cls part.
+                            if args.iterative_train and step > args.iterative_train_steps:
+                                segments_cls = segments_batch_cls[i]
+                                fout_cls.write(tokenizer.restore(uchars, segments_cls))
 
-                    labels = torch.stack(batch_labels, 0).long()
-                    cls_loss = cls_model(x=x_batch, labels=labels.to(device))
-                    log['cls_loss'] = cls_loss.item()
+                fout_slm.close()
+                fout_cls.close()
 
-                    loss += cls_loss
+                # eval_command_slm = "bash run.sh valid %s" % ' '.join(args.save_path.split('/')[-1].rsplit('-'))
+                # eval_command_cls = "bash run.sh valid_cls %s" % ' '.join(args.save_path.split('/')[-1].rsplit('-'))
 
-            elif args.do_supervised:
-                x_batch, seq_len_batch, uchars_batch, segments_batch = next(supervised_data_iterator)
-                x_batch = x_batch.to(device)
-                loss = slm(x_batch, seq_len_batch, segments_batch, mode='supervised')
-                log['supervised_loss'] = loss.item()
+                eval_command_slm = f'perl {SCRIPT} {TRAINING_WORDS} {GOLD_TEST} {VALID_OUTPUT}'
+                eval_command_cls = f'perl {SCRIPT} {TRAINING_WORDS} {GOLD_TEST} {CLS_VALID_OUTPUT}'
+
+                F_score = eval(eval_command_slm, 'slm', VALID_SCORE)
+                if args.iterative_train and step > args.iterative_train_steps:
+                    F_score_cls = eval(eval_command_cls, 'cls', CLS_VALID_SCORE)
+
+            if (not args.do_valid) or (F_score > best_F_score):
+                best_F_score = F_score
+                logging.info('Overwriting best checkpoint....')
+                os.system('cp %s %s' % (os.path.join(args.save_path, 'checkpoint'),
+                                        os.path.join(args.save_path, 'best-checkpoint')))
+            # cls part.
+            if args.iterative_train and step > args.iterative_train_steps:
+                if (F_score_cls > best_F_score_cls):
+                    best_F_score_cls = F_score_cls
+                    logging.info('Overwriting best cls-checkpoint....')
+                    os.system('cp %s %s' % (os.path.join(args.save_path, 'cls_checkpoint'),
+                                            os.path.join(args.save_path, 'best-cls_checkpoint')))
+
+
+    # 先做完 slm 再進行 cls.
+    if args.do_classifier:
+        logging.info('==============================')
+        logging.info('==============================')
+        logging.info('====== Classifier Task ======')
+        logging.info('==============================')
+        logging.info('==============================')
+        slm.eval()
+
+        # Generate Pseudo labeling.
+        all_input_ids, all_labels = [], []
+        all_segments = []
+        with torch.no_grad():
+            for x_batch, seq_len_batch, uchars_batch, segments_batch, restore_orders in valid_dataloader:
+                segments_batch_slm = slm(x_batch.to(device), seq_len_batch, mode='decode')
+                batch_labels = []
+                for input_ids, segment in zip(x_batch, segments_batch_slm):
+                    label = torch.zeros(input_ids.size(0))
+                    e_idx = (input_ids == 5).nonzero(as_tuple=True)[0]
+                    label[e_idx+1:].fill_(-100)
+
+                    # `label` including the labels of <bos> and <eos> token.
+                    # `-1+1` for correct segment index and BOS token.
+                    idx = [sum(segment[:i])-1+1 for i in range(1, len(segment)+1)]
+
+                    label[idx] = 1
+                    batch_labels.append(label)
+
+                all_input_ids.extend(x_batch)
+                all_labels.extend(batch_labels)
+
+        save_pickle({
+            'input_ids':all_input_ids,
+            'labels': all_labels,
+            'segments': all_segments,
+
+        }, f'{args.save_path}/output.pkl')
+
+        print('------- finish cls labels ------')
+
+        cls_dset = ClsDataset(
+            input_ids=all_input_ids,
+            pseudo_labels=all_labels,
+            real_labels=all_labels,
+            is_training=True,
+            batch_token_size=args.cls_batch_size
+        )
+
+        cls_dldr = data.DataLoader(
+            dataset=cls_dset,
+            num_workers=args.cpu_num,
+            batch_size=1,
+            shuffle=False,
+            collate_fn=ClsDataset.single_collate
+        )
+        cls_data_iterator = OneShotIterator(cls_dldr)
+
+
+        logs = []
+        log = {}
+
+        print('------------- Start to Training CLS model -------------')
+        for step in range(args.cls_train_steps):
+            slm.train()
+            cls_model.train()
+
+            input_ids, labels = next(cls_data_iterator)
+            cls_loss = cls_model(x=input_ids.to(device), labels=labels.to(device))
+            log['cls_loss'] = cls_loss.item()
 
             logs.append(log)
 
-            loss.backward()
-            nn.utils.clip_grad_norm_(slm.parameters(), args.gradient_clip)
+            cls_loss.backward()
+            nn.utils.clip_grad_norm_(cls_model.parameters(), args.gradient_clip)
 
             if step > args.warm_up_steps:
-                adam_optimizer.step()
+                cls_adam_optimizer.step()
             else:
                 # do manually SGD
-                for p in slm.parameters():
+                for p in cls_model.parameters():
                     if p.grad is not None:
                         p.data.add_(-args.sgd_learning_rate, p.grad.data)
-
-            scheduler.step()
-            slm.zero_grad()
-            adam_optimizer.zero_grad()
-
-            # cls part.
-            if args.iterative_train and step > args.iterative_train_steps:
-                nn.utils.clip_grad_norm_(cls_model.parameters(), args.gradient_clip)
                 cls_adam_optimizer.step()
-                # if step > args.warm_up_steps:
-                #     cls_adam_optimizer.step()
-                # else:
-                #     # do manually SGD
-                #     for p in cls_model.parameters():
-                #         if p.grad is not None:
-                #             p.data.add_(-args.sgd_learning_rate, p.grad.data)
-
-                cls_scheduler.step()
-                cls_model.zero_grad()
-                cls_adam_optimizer.zero_grad()
+            cls_scheduler.step()
+            cls_model.zero_grad()
+            cls_adam_optimizer.zero_grad()
 
             if step % args.log_every_steps == 0:
-                logging.info("global_step = %s" % step)
+                logging.info("cls global_step = %s" % step)
                 if len(logs) > 0:
                     for key in logs[0]:
                         logging.info("%s = %f" % (key, sum([log[key] for log in logs])/len(logs)))
@@ -350,27 +525,18 @@ def main(args):
                     logging.info("Currently no metrics available")
                 logs = []
 
-            if (step % args.save_every_steps == 0) or (step == args.train_steps - 1):
-                logging.info('Saving checkpoint %s...' % args.save_path)
-                slm_config.to_json_file(os.path.join(args.save_path, 'config.json'))
+            if (step % args.save_every_steps == 0) or (step == args.cls_train_steps - 1):
+                logging.info('Saving cls checkpoint %s...' % args.save_path)
                 torch.save({
                     'global_step': step,
-                    'best_F_score': best_F_score,
-                    'model_state_dict': slm.state_dict(),
-                    'adam_optimizer': adam_optimizer.state_dict()
-                }, os.path.join(args.save_path, 'checkpoint'))
-                if args.iterative_train and step > args.iterative_train_steps:
-                    torch.save({
-                        'global_step': step,
-                        'best_F_score': best_F_score_cls,
-                        'model_state_dict': cls_model.state_dict(),
-                        'adam_optimizer': cls_adam_optimizer.state_dict()
-                    }, os.path.join(args.save_path, 'cls_checkpoint'))
+                    'best_F_score': best_F_score_cls,
+                    'model_state_dict': cls_model.state_dict(),
+                    'adam_optimizer': cls_adam_optimizer.state_dict()
+                }, os.path.join(args.save_path, 'cls_checkpoint'))
 
                 if args.do_valid:
                     slm.eval()
-                    if args.iterative_train and step > args.iterative_train_steps:
-                        cls_model.eval()
+                    cls_model.eval()
 
                     fout_slm = open(VALID_OUTPUT, 'w')
                     fout_cls = open(CLS_VALID_OUTPUT, 'w')
@@ -379,188 +545,34 @@ def main(args):
                         for x_batch, seq_len_batch, uchars_batch, segments_batch, restore_orders in valid_dataloader:
                             x_batch = x_batch.to(device)
                             segments_batch_slm = slm(x_batch, seq_len_batch, mode='decode')
-                            # cls part.
-                            if args.iterative_train and step > args.iterative_train_steps:
-                                segments_batch_cls = cls_model.generate_segments(x=x_batch, lengths=seq_len_batch)
+                            segments_batch_cls = cls_model.generate_segments(x=x_batch, lengths=seq_len_batch)
                             for i in restore_orders:
-                                uchars, segments_slm = uchars_batch[i], segments_batch_slm[i]
+                                uchars, segments_slm, segments_cls = uchars_batch[i], segments_batch_slm[i], segments_batch_cls[i]
                                 fout_slm.write(tokenizer.restore(uchars, segments_slm))
-                                # cls part.
-                                if args.iterative_train and step > args.iterative_train_steps:
-                                    segments_cls = segments_batch_cls[i]
-                                    fout_cls.write(tokenizer.restore(uchars, segments_cls))
+                                fout_cls.write(tokenizer.restore(uchars, segments_cls))
 
                     fout_slm.close()
                     fout_cls.close()
 
                     # eval_command_slm = "bash run.sh valid %s" % ' '.join(args.save_path.split('/')[-1].rsplit('-'))
                     # eval_command_cls = "bash run.sh valid_cls %s" % ' '.join(args.save_path.split('/')[-1].rsplit('-'))
-
                     eval_command_slm = f'perl {SCRIPT} {TRAINING_WORDS} {GOLD_TEST} {VALID_OUTPUT}'
                     eval_command_cls = f'perl {SCRIPT} {TRAINING_WORDS} {GOLD_TEST} {CLS_VALID_OUTPUT}'
 
                     F_score = eval(eval_command_slm, 'slm', VALID_SCORE)
-                    if args.iterative_train and step > args.iterative_train_steps:
-                        F_score_cls = eval(eval_command_cls, 'cls', CLS_VALID_SCORE)
+                    F_score_cls = eval(eval_command_cls, 'cls', CLS_VALID_SCORE)
 
-                if (not args.do_valid) or (F_score > best_F_score):
+                if F_score > best_F_score:
                     best_F_score = F_score
-                    logging.info('Overwriting best checkpoint....')
+                    logging.info('Overwriting best slm checkpoint.... (Train cls model)')
                     os.system('cp %s %s' % (os.path.join(args.save_path, 'checkpoint'),
                                             os.path.join(args.save_path, 'best-checkpoint')))
-                # cls part.
-                if args.iterative_train and step > args.iterative_train_steps:
-                    if (F_score_cls > best_F_score_cls):
-                        best_F_score_cls = F_score_cls
-                        logging.info('Overwriting best cls-checkpoint....')
-                        os.system('cp %s %s' % (os.path.join(args.save_path, 'cls_checkpoint'),
-                                                os.path.join(args.save_path, 'best-cls_checkpoint')))
 
-
-        # 先做完 slm 再進行 cls.
-        if args.do_classifier:
-            logging.info('==============================')
-            logging.info('==============================')
-            logging.info('====== Classifier Task ======')
-            logging.info('==============================')
-            logging.info('==============================')
-            slm.eval()
-
-            # Generate Pseudo labeling.
-            all_input_ids, all_labels = [], []
-            all_segments = []
-            with torch.no_grad():
-                for x_batch, seq_len_batch, uchars_batch, segments_batch, restore_orders in valid_dataloader:
-                    segments_batch_slm = slm(x_batch.to(device), seq_len_batch, mode='decode')
-                    batch_labels = []
-                    for input_ids, segment in zip(x_batch, segments_batch_slm):
-                        label = torch.zeros(input_ids.size(0))
-                        e_idx = (input_ids == 5).nonzero(as_tuple=True)[0]
-                        label[e_idx+1:].fill_(-100)
-
-                        # `label` including the labels of <bos> and <eos> token.
-                        # `-1+1` for correct segment index and BOS token.
-                        idx = [sum(segment[:i])-1+1 for i in range(1, len(segment)+1)]
-
-                        label[idx] = 1
-                        batch_labels.append(label)
-
-                    all_input_ids.extend(x_batch)
-                    all_labels.extend(batch_labels)
-
-            save_pickle({
-                'input_ids':all_input_ids,
-                'labels': all_labels,
-                'segments': all_segments,
-
-            }, f'{args.save_path}/output.pkl')
-
-            print('------- finish cls labels ------')
-
-            cls_dset = ClsDataset(
-                input_ids=all_input_ids,
-                pseudo_labels=all_labels,
-                real_labels=all_labels,
-                is_training=True,
-                batch_token_size=args.cls_batch_size
-            )
-
-            cls_dldr = data.DataLoader(
-                dataset=cls_dset,
-                num_workers=args.cpu_num,
-                batch_size=1,
-                shuffle=False,
-                collate_fn=ClsDataset.single_collate
-            )
-            cls_data_iterator = OneShotIterator(cls_dldr)
-
-
-            logs = []
-            log = {}
-
-            print('------------- Start to Training CLS model -------------')
-            for step in range(args.cls_train_steps):
-                slm.train()
-                cls_model.train()
-
-                input_ids, labels = next(cls_data_iterator)
-                cls_loss = cls_model(x=input_ids.to(device), labels=labels.to(device))
-                log['cls_loss'] = cls_loss.item()
-
-                logs.append(log)
-
-                cls_loss.backward()
-                nn.utils.clip_grad_norm_(cls_model.parameters(), args.gradient_clip)
-
-                if step > args.warm_up_steps:
-                    cls_adam_optimizer.step()
-                else:
-                    # do manually SGD
-                    for p in cls_model.parameters():
-                        if p.grad is not None:
-                            p.data.add_(-args.sgd_learning_rate, p.grad.data)
-                    cls_adam_optimizer.step()
-                cls_scheduler.step()
-                cls_model.zero_grad()
-                cls_adam_optimizer.zero_grad()
-
-                if step % args.log_every_steps == 0:
-                    logging.info("cls global_step = %s" % step)
-                    if len(logs) > 0:
-                        for key in logs[0]:
-                            logging.info("%s = %f" % (key, sum([log[key] for log in logs])/len(logs)))
-                    else:
-                        logging.info("Currently no metrics available")
-                    logs = []
-
-                if (step % args.save_every_steps == 0) or (step == args.cls_train_steps - 1):
-                    logging.info('Saving cls checkpoint %s...' % args.save_path)
-                    torch.save({
-                        'global_step': step,
-                        'best_F_score': best_F_score_cls,
-                        'model_state_dict': cls_model.state_dict(),
-                        'adam_optimizer': cls_adam_optimizer.state_dict()
-                    }, os.path.join(args.save_path, 'cls_checkpoint'))
-
-                    if args.do_valid:
-                        slm.eval()
-                        cls_model.eval()
-
-                        fout_slm = open(VALID_OUTPUT, 'w')
-                        fout_cls = open(CLS_VALID_OUTPUT, 'w')
-
-                        with torch.no_grad():
-                            for x_batch, seq_len_batch, uchars_batch, segments_batch, restore_orders in valid_dataloader:
-                                x_batch = x_batch.to(device)
-                                segments_batch_slm = slm(x_batch, seq_len_batch, mode='decode')
-                                segments_batch_cls = cls_model.generate_segments(x=x_batch, lengths=seq_len_batch)
-                                for i in restore_orders:
-                                    uchars, segments_slm, segments_cls = uchars_batch[i], segments_batch_slm[i], segments_batch_cls[i]
-                                    fout_slm.write(tokenizer.restore(uchars, segments_slm))
-                                    fout_cls.write(tokenizer.restore(uchars, segments_cls))
-
-                        fout_slm.close()
-                        fout_cls.close()
-
-                        # eval_command_slm = "bash run.sh valid %s" % ' '.join(args.save_path.split('/')[-1].rsplit('-'))
-                        # eval_command_cls = "bash run.sh valid_cls %s" % ' '.join(args.save_path.split('/')[-1].rsplit('-'))
-                        eval_command_slm = f'perl {SCRIPT} {TRAINING_WORDS} {GOLD_TEST} {VALID_OUTPUT}'
-                        eval_command_cls = f'perl {SCRIPT} {TRAINING_WORDS} {GOLD_TEST} {CLS_VALID_OUTPUT}'
-
-                        F_score = eval(eval_command_slm, 'slm', VALID_SCORE)
-                        F_score_cls = eval(eval_command_cls, 'cls', CLS_VALID_SCORE)
-
-                    if F_score > best_F_score:
-                        best_F_score = F_score
-                        logging.info('Overwriting best slm checkpoint.... (Train cls model)')
-                        os.system('cp %s %s' % (os.path.join(args.save_path, 'checkpoint'),
-                                                os.path.join(args.save_path, 'best-checkpoint')))
-
-                    if F_score_cls > best_F_score_cls:
-                        best_F_score_cls = F_score_cls
-                        logging.info('Overwriting best cls checkpoint.... (Train cls model)')
-                        os.system('cp %s %s' % (os.path.join(args.save_path, 'cls_checkpoint'),
-                                                os.path.join(args.save_path, 'best-cls_checkpoint')))
+                if F_score_cls > best_F_score_cls:
+                    best_F_score_cls = F_score_cls
+                    logging.info('Overwriting best cls checkpoint.... (Train cls model)')
+                    os.system('cp %s %s' % (os.path.join(args.save_path, 'cls_checkpoint'),
+                                            os.path.join(args.save_path, 'best-cls_checkpoint')))
 
     if args.do_predict:
         logging.info('Prepare prediction dataloader')
@@ -699,73 +711,3 @@ if __name__ == "__main__":
 
     main(parse_args())
     print(f'Process time: {time() - start_time }')
-
-
-#     args = parse_args()
-#     print(vars(args))
-
-#     PROJECT_ROOT_PATH = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
-
-#     DATA = 'as'
-#     DATA_PATH = f'{PROJECT_ROOT_PATH}/data/{DATA}'
-
-#     # score script, words and gold.
-#     SCRIPT = f'{PROJECT_ROOT_PATH}/data/score.pl'
-#     TRAINING_WORDS = f'{DATA_PATH}/words.txt'
-#     GOLD_TEST = f'{DATA_PATH}/test_gold.txt'
-
-#     MODEL_DIR = args.save_path.split('/')[0]
-#     MODE, DATA, MAX_SEG_LEN = args.save_path.split('/')[-1].rsplit('-')
-
-#     MODEL_PATH = f'{PROJECT_ROOT_PATH}/{MODEL_DIR}/{MODE}-{DATA}-{MAX_SEG_LEN}'
-
-#     # score and predcition output file.
-#     # slm valid.
-#     VALID_OUTPUT = f'{MODEL_PATH}/valid_prediction.txt'
-#     VALID_SCORE = f'{MODEL_PATH}/valid_score.txt'
-
-#     # slm prediction.
-#     TEST_OUTPUT = f'{MODEL_PATH}/prediction.txt'
-#     TEST_SCORE = f'{MODEL_PATH}/score.txt'
-
-#     # cls valid.
-#     CLS_VALID_OUTPUT = f'{MODEL_PATH}/valid_prediction_cls.txt'
-#     CLS_VALID_SCORE = f'{MODEL_PATH}/valid_score_cls.txt'
-
-#     # cls prediction.
-#     CLS_TEST_OUTPUT = f'{MODEL_PATH}/prediction_cls.txt'
-#     CLS_TEST_SCORE = f'{MODEL_PATH}/score_cls.txt'
-
-
-
-
-#     eval_command_slm = f'perl {SCRIPT} {TRAINING_WORDS} {GOLD_TEST} {VALID_OUTPUT} > {VALID_SCORE}'
-#     eval(eval_command_slm, 'slm_test')
-
-
-# eval_command = eval_command_slm
-# eval_command = f'perl {SCRIPT} --help > zzzz.txt'
-# attr = 'zzzz_test'
-# out = subprocess.Popen(eval_command.split(' '),
-#                     stdout=subprocess.PIPE,
-#                     stderr=subprocess.STDOUT)
-# stdout, stderr = out.communicate()
-# stdout = stdout.decode("utf-8")
-# logging.info(f'{attr} Validation results:\n%s' % stdout)
-
-# F_score = 0
-# for line in stdout.split('\n'):
-#     if line[:len('=== F MEASURE:')] == '=== F MEASURE:':
-#         F_score = float(line.split('\t')[-1])
-
-# print(f'{attr}, {F_score=}')
-
-# os.popen(eval_command)
-
-
-# print(f'{SCRIPT=}')
-# print(f'{TRAINING_WORDS=}')
-
-
-# print(f'{VALID_OUTPUT=}')
-# print(f'{VALID_SCORE=}')
