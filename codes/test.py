@@ -292,3 +292,7 @@ print(time() - s_time)
 import os
 os.system('cp models_zz/unsupervised-as-3/config.json output')
 # %%
+
+name = 'bert-base-chinese'
+
+model = load_model(name)

@@ -4,11 +4,6 @@
 """
 SLM Training and Decoding
 """
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 # %%
 import argparse
 import logging
@@ -253,11 +248,11 @@ def main(args):
     for step in range(global_step):
         scheduler.step()
 
-    # SLM traiing.
-    # Start to training.
-    # Tensrboard writer.
+    # Tensorboard writer.
     writer = SummaryWriter(args.save_path)
 
+    # SLM traiing.
+    # Start to training.
     for step in range(global_step, args.train_steps):
         slm.train()
 

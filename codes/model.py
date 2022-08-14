@@ -25,21 +25,23 @@ from codes._segment_decoder import SegmentDecoder
 class SLMConfig(object):
     """Configuration for `SegmentalLM`."""
 
-    def __init__(self,
-                 vocab_size,
-                 embedding_size=256,
-                 hidden_size=256,
-                 max_segment_length=4,
-                 encoder_layer_number=1,
-                 decoder_layer_number=1,
-                 encoder_input_dropout_rate=0.0,
-                 decoder_input_dropout_rate=0.0,
-                 encoder_dropout_rate=0.0,
-                 decoder_dropout_rate=0.0,
-                 punc_id=2,
-                 num_id=3,
-                 eos_id=5,
-                 eng_id=7):
+    def __init__(
+        self,
+        vocab_size,
+        embedding_size=256,
+        hidden_size=256,
+        max_segment_length=4,
+        encoder_layer_number=1,
+        decoder_layer_number=1,
+        encoder_input_dropout_rate=0.0,
+        decoder_input_dropout_rate=0.0,
+        encoder_dropout_rate=0.0,
+        decoder_dropout_rate=0.0,
+        punc_id=2,
+        num_id=3,
+        eos_id=5,
+        eng_id=7
+    ):
         """
         Constructs SLMConfig.
         """
@@ -92,9 +94,12 @@ class SegmentalLM(nn.Module):
     SLM (Segmental Language Model)
     """
 
-    def __init__(self,
-                 config,
-                 init_embedding = None):
+    def __init__(
+        self,
+        config,
+        init_embedding = None,
+        **kwargs,
+    ):
         """
         Constructor for BertModel.
         """
@@ -117,6 +122,8 @@ class SegmentalLM(nn.Module):
         n_heads = None
         dec_n_heads = None
         pad_id = 0
+        bidirectional = False
+
 
         # self.embedding = nn.Embedding.from_pretrained(shard_embedding)
         self.embedding = SegEmbedding(
@@ -160,7 +167,13 @@ class SegmentalLM(nn.Module):
                 'position': None,
             },
             encoder_input_dropout_rate=config.encoder_input_dropout_rate,
+            bidirectional=bidirectional,
+            hug_name=kwargs['hug_name'],
         )
+
+        if kwargs['hug_name'] is not None:
+            self.embedding = self.context_encoder.embedding
+            self.embedding2vocab = self.context_encoder.emb2vocab
 
         self.segment_decoder = SegmentDecoder(
             d_model=config.hidden_size,
@@ -200,7 +213,7 @@ class SegmentalLM(nn.Module):
         max_length = x.size(0)
         batch_size = x.size(1)
 
-        loginf=1000000.0
+        loginf = 1000000.0
 
         max_length = max(lengths)
 
@@ -319,7 +332,8 @@ class SegmentalLM(nn.Module):
 
                 normalized_supervised_NLL_loss = supervised_NLL_loss / float(total_length)
 
-                normalized_NLL_loss = normalized_supervised_NLL_loss * 0.1 + normalized_NLL_loss
+                # normalized_NLL_loss = normalized_supervised_NLL_loss * 0.1 + normalized_NLL_loss
+                normalized_NLL_loss = normalized_supervised_NLL_loss # + normalized_NLL_loss
 
             return normalized_NLL_loss
 
@@ -480,5 +494,35 @@ if __name__ == '__main__':
 
     emb2 = nn.Embedding.from_pretrained(shard_embedding)
     voc2 = nn.Linear(embedding_size, vocab_size)
-    voc2.weight = emb2.weight
+#     voc2.weight = emb2.weight
+
+
 # %%
+# from transformers import AutoTokenizer, BertModel, BertForMaskedLM
+# encoder = BertModel.from_pretrained("bert-base-chinese")
+# embedding = encoder.get_input_embeddings()
+# tk = AutoTokenizer.from_pretrained("bert-base-chinese")
+# # %%
+# s = [
+#         '李院长于二月二，',
+#         '二十六日至三月十五日赴美访问，',
+#     ]
+
+# o = tk(s, padding=True, return_tensors='pt' )
+# o
+
+
+# %%
+# import torch
+# bz, sz = 3, 10
+# x = torch.randint(0, 100, (bz, sz))
+# embeds = embedding(x)
+
+# %%
+# from transformers import AutoTokenizer, BertModel, BertForMaskedLM
+# m = BertForMaskedLM.from_pretrained("bert-base-chinese")
+
+
+# attn_mask = (x != pad_id).bool()
+
+# oo = encoder(o.input_ids, o.attention_mask.bool())
