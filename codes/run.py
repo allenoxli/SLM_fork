@@ -99,7 +99,7 @@ def parse_args(args=None):
 
     parser.add_argument("--label_smoothing", type=float, default=0.15)
     parser.add_argument("--hug_name", type=str, default=None)
-
+    parser.add_argument("--encoder_mask_type", type=str, default=None) # seg_mask
 
     parser.add_argument("--seed", type=int, default=42) # 42, 87, 5253
 
@@ -643,6 +643,7 @@ def main(args):
             eval_command_cls = f'perl {SCRIPT} {TRAINING_WORDS} {GOLD_TEST} {CLS_TEST_OUTPUT}'
             F_score_cls = eval(eval_command_cls, 'CLS', CLS_TEST_SCORE, True)
 
+    writer.close()
 
 def first_part(args):
     if not args.do_unsupervised and not args.do_supervised and not args.do_predict:
@@ -671,7 +672,6 @@ def first_part(args):
     logging.info('\n======\n')
 
     device = torch.device('cuda') if args.use_cuda else torch.device('cpu')
-
 
     tokenizer = CWSTokenizer(
         vocab_file=args.vocab_file,
@@ -710,6 +710,7 @@ def first_part(args):
         config=slm_config,
         init_embedding=init_embedding,
         hug_name=args.hug_name,
+        encoder_mask_type=args.encoder_mask_type,
     )
     logging.info('Model Info:\n%s' % slm)
 
@@ -721,53 +722,3 @@ if __name__ == "__main__":
 
     main(parse_args())
     print(f'Process time: {time() - start_time }')
-
-    # args = parse_args()
-    # set_seed(args.seed)
-
-    # set_logger(args)
-    # logging.info(str(args))
-    # logging.info('\n======\n')
-
-    # device = torch.device('cuda') if args.use_cuda else torch.device('cpu')
-
-
-    # tokenizer = CWSTokenizer(
-    #     vocab_file=args.vocab_file,
-    #     max_seq_length=args.max_seq_length,
-    #     segment_token=args.segment_token,
-    #     english_token=args.english_token,
-    #     number_token=args.number_token,
-    #     punctuation_token=args.punctuation_token,
-    #     bos_token=args.bos_token,
-    #     eos_token=args.eos_token
-    # )
-    # if args.hug_name is not None:
-    #     tokenizer = CWSHugTokenizer(
-    #         vocab_file=args.vocab_file,
-    #         tk_hug_name=args.hug_name,
-    #         max_seq_length=args.max_seq_length,
-    #         segment_token=args.segment_token,
-    #         english_token=args.english_token,
-    #         number_token=args.number_token,
-    #         punctuation_token=args.punctuation_token,
-    #         bos_token=args.bos_token,
-    #         eos_token=args.eos_token,
-    #     )
-
-    # if args.init_embedding_path:
-    #     logging.info('Loading init embedding from %s...' % args.init_embedding_path)
-    #     init_embedding = np.load(args.init_embedding_path)
-    # else:
-    #     logging.info('Ramdomly Initializing character embedding...')
-    #     init_embedding = None
-
-    # slm_config = model.SLMConfig.from_json_file(args.config_file)
-    # logging.info('Config Info:\n%s' % slm_config.to_json_string())
-
-    # slm = model.SegmentalLM(
-    #     config=slm_config,
-    #     init_embedding=init_embedding,
-    #     hug_name=args.hug_name,
-    # )
-    # logging.info('Model Info:\n%s' % slm)

@@ -4,6 +4,7 @@ go*.sh
 models_*
 output
 log
+bert-base-chinese
 
 *.pkl
 

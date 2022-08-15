@@ -124,7 +124,6 @@ class SegmentalLM(nn.Module):
         pad_id = 0
         bidirectional = False
 
-
         # self.embedding = nn.Embedding.from_pretrained(shard_embedding)
         self.embedding = SegEmbedding(
             d_model=config.embedding_size,
@@ -169,6 +168,8 @@ class SegmentalLM(nn.Module):
             encoder_input_dropout_rate=config.encoder_input_dropout_rate,
             bidirectional=bidirectional,
             hug_name=kwargs['hug_name'],
+            max_seg_len=config.max_segment_length,
+            encoder_mask_type=kwargs['encoder_mask_type'],
         )
 
         if kwargs['hug_name'] is not None:
