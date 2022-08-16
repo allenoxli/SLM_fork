@@ -9,7 +9,7 @@ bert-base-chinese
 *.pkl
 
 .venv
-
+Pipfile
 
 # Compiled python modules.
 *.pyc
@@ -17,3 +17,5 @@ bert-base-chinese
 # Byte-compiled
 __pycache__/
 .cache/
+
+

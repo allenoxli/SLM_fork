@@ -147,7 +147,7 @@ python -u -m codes.run \
     --config_file $CONFIG_FILE \
     --save_path "$MODEL_PATH" \
     --sgd_learning_rate 16.0 \
-    --adam_learning_rate 0.0005 \
+    --adam_learning_rate 0.005 \
     --warm_up_steps 800 \
     --train_steps 6000 \
     --unsupervised_batch_size 8000 \
