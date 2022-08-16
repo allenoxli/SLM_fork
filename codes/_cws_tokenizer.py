@@ -1,3 +1,4 @@
+# %%
 from transformers import AutoTokenizer
 
 class CWSHugTokenizer:
@@ -19,6 +20,7 @@ class CWSHugTokenizer:
         delimiters='，。',
     ):
 
+        self.tk_hug = None
         if tk_hug_name is not None:
             bos_token = '[CLS]'
             eos_token = '[SEP]'
@@ -27,7 +29,6 @@ class CWSHugTokenizer:
             additional_tokens = ['<NUM>', '<ENG>', '<PUNC>']
             self.tk_hug = AutoTokenizer.from_pretrained(tk_hug_name, additional_special_tokens=additional_tokens)
             vocab = self.tk_hug.vocab
-
 
         self.token2id = {}
         self.id2token = {}
@@ -219,29 +220,27 @@ class CWSHugTokenizer:
 
     def tokenize(self, uchar):
         '''
-        Tokenize uchar
+        Tokenize uchar. (Check whether uchar is a Chinese character)
         '''
-        #Check whether uchar is a Chinese character
-
         cp = ord(uchar)
 
-        #Check whether uchar is a number
-        #０１２３４５６７８９
-        #0123456789
-        #ⅢⅣⅠⅡⅤ
-        #％．＋＞∶‰+㈨℃.
+        # Check whether uchar is a number.
+        # ０１２３４５６７８９
+        # 0123456789
+        # ⅢⅣⅠⅡⅤ
+        # ％．＋＞∶‰+㈨℃.
         if (
             (0xff10 <= cp <= 0xff19) or (0x0030 <= cp <= 0x0039) or (0x2160 <= cp <= 0x2179) or (uchar in '％．＋＞∶‰+㈨℃.')
         ):
             return self.number_token
 
-        #Check whether uchar is an English character
-        #ａ-ｚ
-        #Ａ-Ｚ
-        #A-Z
-        #a-z
-        #alpha, beta, gamma, ...
-        #＆
+        # Check whether uchar is an English character.
+        # ａ-ｚ
+        # Ａ-Ｚ
+        # A-Z
+        # a-z
+        # alpha, beta, gamma, ...
+        # ＆
         elif (
             (0xff41 <= cp <= 0xff5a) or (0xff21 <= cp <= 0xff3a) or (0x0041 <= cp <= 0x005A) or
             (0x0061 <= cp <= 0x007A) or (0x3B1 <= cp <= 0x3D0) or (uchar == '＆')
@@ -252,7 +251,9 @@ class CWSHugTokenizer:
             return uchar
 
         else:
-            # It is a punctuation
+            # if self.tk_hug is not None:
+            #     return uchar
+            # It is a punctuation.
             return self.punctuation_token
 
     def full2half(self, ustring):
@@ -289,19 +290,22 @@ class CWSHugTokenizer:
             ss.append(rstring)
         return ''.join(ss)
 
-if __name__ == '__main__':
-    from core_gate import DATA_PATH
-    vocab_file = f'{DATA_PATH}/vocab/vocab.txt'
-    max_seq_length = 32
-    segment_token='　'
-    english_token='<ENG>'
-    number_token='<NUM>'
-    punctuation_token='<PUNC>'
-    bos_token='<BOS>'
-    eos_token='</s>'
-    delimiters='，。'
 
-    tk = CWSTokenizer(
+if __name__ == '__main__':
+
+    vocab_file = None
+    max_seq_length = 32
+    segment_token = '  '
+    english_token = '<ENG>'
+    number_token = '<NUM>'
+    punctuation_token = '<PUNC>'
+    bos_token = '<BOS>'
+    eos_token = '</s>'
+    delimiters = '，。'
+
+    tk = CWSHugTokenizer(
+        vocab=None,
+        tk_hug_name='bert-base-chinese',
         vocab_file=vocab_file,
         max_seq_length=max_seq_length,
         segment_token=segment_token,
@@ -313,3 +317,74 @@ if __name__ == '__main__':
     )
 
 
+    sent_uchars = []
+    sent_tokens = []
+    sent_segments = []
+
+    line_count = 0
+
+    file = 'data/as/segmented.txt'
+
+    # with open(file, 'r') as fin:
+    #     for line in fin:
+    #         line_count += 1
+    #         uchars, tokens, segments = tk.sent_tokenize(line)
+    #         sent_uchars.extend(uchars)
+    #         sent_tokens.extend(tokens)
+    #         sent_segments.extend(segments)
+
+    line = '书法、、[11插花]、土风舞班，'
+    uchars, tokens, segments = tk.sent_tokenize_hug(line)
+
+    sent = line.strip()
+    # uchars = list(sent.replace(segment_token, ''))
+    # uchars = [(uchar, tk.tokenize(uchar)) for uchar in uchars]
+
+    untokenized_segments = [len(segment) for segment in sent.split(segment_token)]
+
+    uchars = list(sent.replace(segment_token, ''))
+    uchars = [(uchar, tk.tokenize(uchar)) for uchar in uchars]
+    print('----')
+    outputs = [[]] # [sentecne1[(uchar1, token1), (uchar2, token2)], sentence2[ (ucahr1, token1)] ]
+    segments = [[0]]
+    curremt_seq_length = 0
+    for uchar, token in uchars:
+        if len(outputs[0]) == 0: # first of all.
+            outputs[-1].append((uchar, token))
+            segments[-1][-1] += 1
+            curremt_seq_length += 1
+        elif token in (english_token, punctuation_token, number_token) and outputs[-1][-1][1] == token:
+
+            if token in (english_token, number_token):
+                outputs[-1][-1] = (outputs[-1][-1][0] + uchar, token)
+            elif token == punctuation_token and outputs[-1][-1][0][-1:] == uchar:
+                outputs[-1][-1] = (outputs[-1][-1][0] + uchar, token)
+            else:
+                outputs[-1][-1] = (outputs[-1][-1][0] + segment_token + uchar, token)
+        elif curremt_seq_length == max_seq_length - 2:
+            outputs[-1].append(('', eos_token))
+            outputs.append([])
+            segments.append([1])
+            outputs[-1].append((uchar, token))
+            curremt_seq_length = 1
+        elif len(set(outputs[-1][-1][0]) & set(delimiters)) > 0:
+            outputs[-1].append(('', eos_token))
+            outputs.append([])
+            segments.append([1])
+            outputs[-1].append((uchar, token))
+            curremt_seq_length = 1
+        else:
+            outputs[-1].append((uchar, token))
+            segments[-1][-1] += 1
+            curremt_seq_length += 1
+
+        untokenized_segments[0] -= 1
+        if untokenized_segments[0] == 0:
+            del untokenized_segments[0]
+            segments[-1].append(0)
+
+    outputs[-1].append(('<\\n>', eos_token))
+
+
+
+# %%

@@ -24,7 +24,7 @@ from codes.tokenization import CWSTokenizer
 from codes._cws_tokenizer import CWSHugTokenizer
 from codes.dataloader import ClsDataset, InputDataset, OneShotIterator
 from codes._segment_classifier import SegmentClassifier
-from codes._util import load_pickle, save_pickle, set_logger, set_seed
+from codes._util import save_pickle, set_logger, set_seed
 
 
 def parse_args(args=None):
@@ -73,7 +73,7 @@ def parse_args(args=None):
 
     # training step setting
     parser.add_argument("--save_every_steps", type=int, default=400)
-    parser.add_argument("--log_every_steps", type=int, default=100)
+    parser.add_argument("--log_every_steps", type=int, default=5)
     parser.add_argument("--warm_up_steps", type=int, default=800)
     parser.add_argument("--train_steps", type=int, default=4000)
 
@@ -273,7 +273,6 @@ def main(args):
     for step in range(global_step):
         scheduler.step()
 
-
     # Tensorboard writer.
     writer = SummaryWriter(args.save_path)
 
@@ -338,7 +337,6 @@ def main(args):
         slm.zero_grad()
         adam_optimizer.zero_grad()
 
-
         # cls part.
         if args.iterative_train and step > args.iterative_train_steps:
             nn.utils.clip_grad_norm_(cls_model.parameters(), args.gradient_clip)
@@ -348,11 +346,14 @@ def main(args):
             cls_adam_optimizer.zero_grad()
 
         if step % args.log_every_steps == 0:
-            logging.info("global_step = %s" % step)
             if len(logs) > 0:
+                unsupervised_loss = sum([log['unsupervised_loss'] for log in logs])/len(logs)
+                args.save_every_steps = 100 if unsupervised_loss <= 6.35 and unsupervised_loss >= 4.8 else 500
                 for key in logs[0]:
-                    logging.info("%s = %f" % (key, sum([log[key] for log in logs])/len(logs)))
                     writer.add_scalar(key, sum([log[key] for log in logs])/len(logs), step)
+                    if step % 100 == 0:
+                        logging.info("global_step = %s" % step)
+                        logging.info("%s = %f" % (key, sum([log[key] for log in logs])/len(logs)))
             else:
                 logging.info("Currently no metrics available")
             logs = []

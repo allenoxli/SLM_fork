@@ -1,9 +1,4 @@
-
-
-
-
 from codes._model_output import BaseModelOuput, SegmentOutput, TextClassficationOutput, QAModelOuput
-
 
 from codes._segment_classifier import SegmentClassifier
 from codes._segment_decoder import SegmentDecoder
