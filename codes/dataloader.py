@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 import os
-
-import random
 import logging
+import pickle
+import random
 
 import torch
 from torch.utils import data
-import pickle
 
 def load_pickle(file_name):
     with open(file_name, 'rb') as f:
@@ -35,7 +31,6 @@ class InputDataset(data.Dataset):
         sent_segments = []
 
         line_count = 0
-
 
         name = 'train' if 'unsegmented' in input_files[0] else 'test'
 

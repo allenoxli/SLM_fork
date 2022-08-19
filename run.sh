@@ -147,12 +147,12 @@ python -u -m codes.run \
     --config_file $CONFIG_FILE \
     --save_path "$MODEL_PATH" \
     --sgd_learning_rate 16.0 \
-    --adam_learning_rate 0.005 \
+    --adam_learning_rate 0.0005 \
     --warm_up_steps 800 \
     --train_steps 6000 \
     --unsupervised_batch_size 8000 \
-    --predict_batch_size 500 \
-    --valid_batch_size 500 \
+    --predict_batch_size 1000 \
+    --valid_batch_size 2000 \
     --segment_token "  " \
     --hug_name "bert-base-chinese" \
     --encoder_mask_type "seg_mask" \

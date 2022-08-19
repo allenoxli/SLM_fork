@@ -12,7 +12,7 @@ def zip_source(filename):
             zip_file.write(entry, entry.relative_to(folder))
 
 
-out_dir = f'zip_file/pytorch_hug_bert'
+out_dir = f'zip_file/bert_seg'
 os.makedirs(out_dir, exist_ok=True)
 zip_source(f'{out_dir}//codes.zip')
 

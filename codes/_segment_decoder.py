@@ -34,23 +34,34 @@ class SegmentDecoderLSTM(nn.Module):
         d_model: int,
         dec_n_layers: int,
         dropout: float = 0.1,
+        is_narrowed: bool = True,
     ) -> None:
         super().__init__()
-        self.segment_lstm = nn.LSTM(
-            input_size=d_model,
-            hidden_size=d_model,
-            num_layers=dec_n_layers,
-            dropout=dropout
-        )
-        self.droupout = nn.Dropout(p=dropout)
-        self.segment_decoder_ff = nn.Linear(d_model, (1+dec_n_layers) * d_model)
 
         self.dec_n_layers = dec_n_layers
 
+        dim_narrow = d_model // 4 if is_narrowed else d_model
+        print(is_narrowed)
+        print(dim_narrow)
+        if is_narrowed:
+            self.narrow_linear = nn.Linear(d_model, dim_narrow)
+            self.narrow_segment_decoder_ff = nn.Linear((1+dec_n_layers) * d_model, (1+dec_n_layers) * dim_narrow)
+            self.recover_linear = nn.Linear(dim_narrow, d_model)
+
+        self.segment_lstm = nn.LSTM(
+            input_size=dim_narrow,
+            hidden_size=dim_narrow,
+            num_layers=dec_n_layers,
+            dropout=dropout
+        )
+
+        self.segment_decoder_ff = nn.Linear(d_model, (1+dec_n_layers) * d_model)
+
+        self.droupout = nn.Dropout(p=dropout)
+
     def gen_start_symbol_hidden(self, encoder_output: Tensor):
         return self.segment_decoder_ff(encoder_output)
-        return torch.tanh(self.segment_decoder_ff(encoder_output))
-
+        # return torch.tanh(self.segment_decoder_ff(encoder_output))
 
     def forward(self, seg_start_hidden: Tensor, seg_embeds: Tensor) -> Tensor:
         """Estimating the probabilities of each char in segment.
@@ -68,6 +79,11 @@ class SegmentDecoderLSTM(nn.Module):
             shape: (1+max_seg_len, B, d_model)
         """
         self.segment_lstm.flatten_parameters()
+
+        if hasattr(self, 'narrow_linear'):
+            # `seg_embeds` shape: (max_seg_len, B, dim_narrow)
+            seg_start_hidden = self.narrow_segment_decoder_ff(seg_start_hidden)
+            seg_embeds = self.narrow_linear(seg_embeds)
 
         d_model = seg_embeds.size(-1)
         batch_size = seg_embeds.size(1)
@@ -90,6 +106,9 @@ class SegmentDecoderLSTM(nn.Module):
 
         # `decoder_output` shape: (max_seg_len+1, B, d_model)
         decoder_output, _ = self.segment_lstm(decoder_input, (decoder_h_init, decoder_c_init))
+
+        if hasattr(self, 'narrow_linear'):
+            decoder_output = self.recover_linear(decoder_output)
 
         # shape: (1+max_seg_len, B, d_model)
         return self.droupout(decoder_output)

@@ -131,3 +131,30 @@ o = m(x, attn_mask, output_attentions=True)
 o.attentions[0].size()
 o.attentions[0]
 
+
+# %%
+seq_length = 12
+max_seg_len = 3
+range_by_length = {}
+for seg_len in range(max_seg_len, 0, -1):
+    last_index = seq_length - seg_len
+    if seg_len == max_seg_len:
+        first_index = 0
+    else:
+        first_index = range_by_length[seg_len + 1][1]
+    range_by_length[seg_len] = (first_index, last_index)
+
+range_by_length
+# %%
+
+for seg_len in range(max_seg_len, 0, -1):
+    # Trim the encoder output down to the number of positions that can
+    # actually start a segment of length seg_len
+    range_start, range_end = range_by_length[seg_len]
+    num_seg_starts = range_end - range_start
+
+    print(range_start, range_end)
+    print()
+    print(num_seg_starts)
+
+# %%

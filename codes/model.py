@@ -8,6 +8,7 @@ SLM Model
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+import logging
 
 import six
 import copy
@@ -225,6 +226,7 @@ class SegmentalLM(nn.Module):
         # if self.config.embedding_size != self.config.hidden_size:
         #     inputs = self.embedding2hidden(inputs)
 
+        # `is_single` shape: (S, B)
         is_single = -loginf * ((x == self.config.punc_id) | (x == self.config.eng_id) | (x == self.config.num_id)).type_as(x)
 
         if mode == 'supervised':
@@ -264,6 +266,202 @@ class SegmentalLM(nn.Module):
 
             #Segment Decoder
             # decoder_output = self.segment_decoder(decoder_input, decoder_init_states)
+            decoder_output = self.segment_decoder(
+                seg_start_hidden=seg_dec_hiddens[j_start-1, :, :].unsqueeze(0),
+                seg_embeds=self.decoder_input_dropout(inputs[j_start:j_end, :, :]),
+            )
+            decoder_output = self.embedding2vocab(decoder_output)
+            decoder_logpy = F.log_softmax(decoder_output, dim=2)
+
+            decoder_target = x[j_start:j_end, :]
+
+            target_logpy = decoder_logpy[:-1, :, :].gather(dim=2, index=decoder_target.unsqueeze(-1)).squeeze(-1)
+
+            tmp_logpy = torch.zeros_like(target_logpy[0])
+
+            #j is a temporary j_end
+            for j in range(j_start, j_end):
+                tmp_logpy = tmp_logpy + target_logpy[j - j_start, :]
+                if j > j_start:
+                    tmp_logpy = tmp_logpy + is_single[j, :]
+                if j == j_start + 1:
+                    tmp_logpy = tmp_logpy + is_single[j_start, :]
+                logpy[j_start][j - j_start] = tmp_logpy + decoder_logpy[j - j_start + 1, :, self.config.eos_id]
+
+        if mode == 'unsupervised' or mode == 'supervised':
+
+            # total_log_probability
+            # log probability for generate <bos> at beginning is 0
+            alpha = neg_inf_vector.repeat(max_length - 1, 1)
+            alpha[0] = 0
+
+            for j_end in range(1, max_length - 1):
+                logprobs = []
+                for j_start in range(max(0, j_end - self.config.max_segment_length), j_end):
+                    logprobs.append(alpha[j_start] + logpy[j_start + 1][j_end - j_start - 1])
+                alpha[j_end] =  torch.logsumexp(torch.stack(logprobs), dim=0)
+
+            NLL_loss = 0.0
+            total_length = 0
+
+            # alphas = torch.stack(alpha)
+            alphas = alpha
+            index = (torch.LongTensor(lengths) - 2).view(1, -1)
+
+            if alphas.is_cuda:
+                index = index.cuda()
+
+            NLL_loss = - torch.gather(input=alphas, dim=0, index=index)
+
+            assert NLL_loss.view(-1).size(0) == batch_size
+
+            total_length += sum(lengths) - 2 * batch_size
+
+            normalized_NLL_loss = NLL_loss.sum() / float(total_length)
+
+            if mode == 'supervised':
+                # Get extra loss for supervised segmentation
+
+                supervised_NLL_loss = 0.0
+                total_length = 0
+
+                for i in range(batch_size):
+                    j_start = 1
+                    for j_length in segments[i]:
+                        if j_length <= self.config.max_segment_length:
+                            supervised_NLL_loss = supervised_NLL_loss - logpy[j_start][j_length - 1][i]
+                            total_length += j_length
+                        j_start += j_length
+
+                normalized_supervised_NLL_loss = supervised_NLL_loss / float(total_length)
+
+                # normalized_NLL_loss = normalized_supervised_NLL_loss * 0.1 + normalized_NLL_loss
+                normalized_NLL_loss = normalized_supervised_NLL_loss # + normalized_NLL_loss
+
+            return normalized_NLL_loss
+
+        elif mode == 'decode':
+            ret = []
+
+            for i in range(batch_size):
+                alpha = [-loginf]*(lengths[i] - 1)
+                prev = [-1]*(lengths[i] - 1)
+                alpha[0] = 0.0
+                for j_end in range(1, lengths[i] - 1):
+                    for j_start in range(max(0, j_end - self.config.max_segment_length), j_end):
+                        logprob = alpha[j_start] + logpy[j_start + 1][j_end - j_start - 1][i].item()
+                        if logprob > alpha[j_end]:
+                            alpha[j_end] = logprob
+                            prev[j_end] = j_start
+
+                j_end = lengths[i] - 2
+                segment_lengths = []
+                while j_end > 0:
+                    prev_j = prev[j_end]
+                    segment_lengths.append(j_end - prev_j)
+                    j_end = prev_j
+
+                segment_lengths = segment_lengths[::-1]
+
+                ret.append(segment_lengths)
+
+            return ret
+
+        else:
+            raise ValueError('Mode %s not supported' % mode)
+
+
+    def forward_hope_faster_but_not(self, x, lengths, segments=None, mode='unsupervised'):
+
+        # `x` shape: (seq_len, batch_size)
+        x = x.transpose(0, 1).contiguous()
+
+        #transformed format: (seq_len, batch_size)
+        max_length = x.size(0)
+        batch_size = x.size(1)
+
+        loginf = 1000000.0
+
+        max_length = max(lengths)
+
+        lm_output = self.context_encoder(x.transpose(0, 1).contiguous())
+        inputs = lm_output.embeds.transpose(0, 1)
+        encoder_output = lm_output.decoder_hidden.transpose(0, 1)
+
+        is_single = -loginf * ((x == self.config.punc_id) | (x == self.config.eng_id) | (x == self.config.num_id)).type_as(x)
+
+        neg_inf_vector = torch.full_like(inputs[0,:,0], -loginf)
+
+        # `logpy` shape: (S, max_seg_len, B)
+        logpy = neg_inf_vector.repeat(max_length - 1, self.config.max_segment_length, 1)
+        logpy[0][0] = 0
+
+        # Make context encoder and segment decoder have different learning rate
+        encoder_output = encoder_output * 0.5
+
+        seg_dec_hiddens = self.segment_decoder.gen_start_symbol_hidden(encoder_output)
+        
+        max_seg_len = self.config.max_segment_length
+
+        range_by_length = {}
+        for seg_len in range(max_seg_len, 0, -1):
+            last_index = max_length - seg_len
+            if seg_len == max_seg_len:
+                first_index = 0
+            else:
+                first_index = range_by_length[seg_len + 1][1]
+            range_by_length[seg_len] = (first_index, last_index)
+
+        for seg_len in range(max_seg_len, 0, -1):
+            range_start, range_end = range_by_length[seg_len]
+
+            # (range, B, (n_layer + 1)*d_model)
+            start_symbols_and_h = seg_dec_hiddens[range_start:range_end, :, :]
+            seg_embeds, seg_target = [], []
+            for s_idx in range(range_start + 1, range_end + 1):
+                masked_seg = inputs[s_idx: s_idx + seg_len, :, :]
+                target_seg = x[s_idx:s_idx + seg_len, :]
+                seg_embeds.append(masked_seg)
+                seg_target.append(target_seg)
+
+            # `seg_embeds` shape: (max_seg_len, range, B, d_model)
+            # `seg_target` shape: (max_seg_len, range, B)
+            seg_embeds = torch.stack(seg_embeds, dim=1)
+            seg_target = torch.stack(seg_target, dim=1)
+
+            # `start_symbols_and_h` shape: (1, B', (n_layer + 1)*d_model)
+            # `seg_embeds` shape: (max_seg_len, B', d_model)    
+            start_symbols_and_h = start_symbols_and_h.view(1, -1, start_symbols_and_h.size(-1))
+            seg_embeds = seg_embeds.view(seg_len, -1, seg_embeds.size(-1))
+
+            # (range_seg, B', d_model)
+            decoder_output = self.segment_decoder(
+                seg_start_hidden=start_symbols_and_h,
+                seg_embeds=self.decoder_input_dropout(seg_embeds),
+            )
+            # (max_seg_len+1, range, B, d_model)
+            decoder_output = decoder_output.view(
+                seg_len + 1, -1, batch_size, inputs.size(-1)
+            )
+
+            # `decoder_logpy` shape: (max_seg_len+1, range, B, V)
+            decoder_output = self.embedding2vocab(decoder_output)
+            decoder_logpy = F.log_softmax(decoder_output, dim=-1)            
+            # (max_seg_len, range, B)
+            target_logpy = decoder_logpy[:-1, :, :, :].gather(
+                dim=3, index=seg_target.unsqueeze(-1)
+            ).squeeze(-1)
+
+            # `tmp_logpy` shape: (range, B)
+            tmp_logpy = torch.zeros_like(target_logpy[0])
+            for k in range(seg_len):
+                tmp_logpy += target_logpy[k, :, :]
+                tmp_logpy += is_single[range_start:range_end, :]
+                tmp_logpy += decoder_logpy[k + 1, :, :, self.config.eos_id]
+                logpy[range_start:range_end, k, :] = tmp_logpy
+
+        for j_start in range(1, max_length - 1):
+            j_end = j_start + min(self.config.max_segment_length, (max_length-1) - j_start)
             decoder_output = self.segment_decoder(
                 seg_start_hidden=seg_dec_hiddens[j_start-1, :, :].unsqueeze(0),
                 seg_embeds=self.decoder_input_dropout(inputs[j_start:j_end, :, :]),

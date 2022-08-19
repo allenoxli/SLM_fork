@@ -1,6 +1,5 @@
 # %%
 import argparse
-from cmath import isnan
 import subprocess
 
 import numpy as np
