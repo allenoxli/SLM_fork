@@ -5,10 +5,6 @@
 SLM Model
 """
 # %%
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import six
 import copy
 import json
@@ -17,6 +13,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
+
 
 from codes._segment_encoder import SegEmbedding, SegmentEncoder
 from codes._segment_decoder import SegmentDecoder
@@ -170,6 +168,7 @@ class SegmentalLM(nn.Module):
             hug_name=kwargs['hug_name'],
             max_seg_len=config.max_segment_length,
             encoder_mask_type=kwargs['encoder_mask_type'],
+            do_masked_lm=kwargs['do_masked_lm'],
         )
 
         if kwargs['hug_name'] is not None:
@@ -383,6 +382,22 @@ class SegmentalLM(nn.Module):
 
         return loss
 
+    def mlm_forward(self, x: Tensor, lengths, ratio: float=0.15):
+
+        masked_input_ids = torch.clone(x)
+        masked_labels = torch.clone(x)
+
+        mask_idxs = torch.rand(x.size()) <= ratio
+        mask_idxs[:, 0] = False
+        for idx, length in enumerate(lengths):
+            mask_idxs[idx, length-1:].fill_(False)
+
+        masked_input_ids[mask_idxs] = 103
+
+        mlm_loss = self.context_encoder.mlm_forward(x=masked_input_ids, masked_labels=masked_labels)
+
+        return mlm_loss
+
 
 
 class ContextEncoder(nn.Module):
@@ -439,91 +454,3 @@ class SegmentDecoder2(nn.Module):
 
         return output
 
-
-###################################
-# from _util import init_module
-# from _model_output import SegmentOutput
-# from _segment_encoder import SegEmbedding, SegmentEncoder
-# from _segment_decoder import SegmentDecoder
-
-# from typing import Dict
-
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# from torch import Tensor
-
-
-# class ContextEncoder(nn.Module):
-#     def __init__(self, input_size, hidden_size, layer_number, dropout_rate):
-#         super(ContextEncoder, self).__init__()
-#         self.input_size = input_size
-#         self.hidden_size = hidden_size
-#         self.rnn = nn.LSTM(
-#             input_size=hidden_size,
-#             hidden_size=hidden_size,
-#             num_layers=layer_number,
-#             dropout=dropout_rate
-#         )
-
-
-
-# %%
-
-if __name__ == '__main__':
-    init_embedding_path = 'data/vocab/embedding.npy'
-    init_embedding = np.load(init_embedding_path)
-    shard_embedding = nn.Parameter(torch.from_numpy(init_embedding).float())
-
-    embedding_size = 256
-    vocab_size = 8677
-    n_heads = None
-    pad_id = 0
-    emb1 = SegEmbedding(
-        d_model=embedding_size,
-        dropout=0.1,
-        vocab_size=vocab_size,
-        init_embedding={
-            'embedding': shard_embedding.detach().numpy(),
-            'position': None,
-        },
-        is_pos=False if n_heads is None else True,
-        max_len=32,
-        pad_id=pad_id,
-    )
-
-
-    emb2 = nn.Embedding.from_pretrained(shard_embedding)
-    voc2 = nn.Linear(embedding_size, vocab_size)
-#     voc2.weight = emb2.weight
-
-
-# %%
-# from transformers import AutoTokenizer, BertModel, BertForMaskedLM
-# encoder = BertModel.from_pretrained("bert-base-chinese")
-# embedding = encoder.get_input_embeddings()
-# tk = AutoTokenizer.from_pretrained("bert-base-chinese")
-# # %%
-# s = [
-#         '李院长于二月二，',
-#         '二十六日至三月十五日赴美访问，',
-#     ]
-
-# o = tk(s, padding=True, return_tensors='pt' )
-# o
-
-
-# %%
-# import torch
-# bz, sz = 3, 10
-# x = torch.randint(0, 100, (bz, sz))
-# embeds = embedding(x)
-
-# %%
-# from transformers import AutoTokenizer, BertModel, BertForMaskedLM
-# m = BertForMaskedLM.from_pretrained("bert-base-chinese")
-
-
-# attn_mask = (x != pad_id).bool()
-
-# oo = encoder(o.input_ids, o.attention_mask.bool())

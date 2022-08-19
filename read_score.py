@@ -58,7 +58,10 @@ for exp in dirs:
         if file == 'train.log':
             line = open(file_path, 'r').readlines()[0]
             seed = re.search('seed=\d+', line).group()
-            print(f'{seed}, {exp}')
+            batch_size = re.search('unsupervised_batch_size=\d+', line).group()
+            learning_rate = re.search('adam_learning_rate=\d+.?\d+', line).group()
+            warm_up_steps = re.search('warm_up_steps=\d+', line).group()
+            print(f'{seed}, {batch_size}, {learning_rate}, {warm_up_steps}, {exp}')
         if file not in ['score.txt', 'score_cls.txt']:
             continue
         name = 'cls' if 'cls' in file_path else 'seg'

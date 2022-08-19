@@ -2,6 +2,7 @@ from typing import Dict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 from codes._model_output import SegmentOutput
@@ -95,12 +96,20 @@ def SegmentEncoder(
         )
 
     if hug_name:
-        return SegmentBERTEnocder(
-            hug_name=hug_name,
-            pad_id=pad_id,
-            vocab_size=vocab_size,
-            max_seg_len=None if kwargs['encoder_mask_type'] is None else kwargs['max_seg_len']
-        )
+        if 'bert' in hug_name:
+            return SegmentBERTEnocder(
+                hug_name=hug_name,
+                pad_id=pad_id,
+                vocab_size=vocab_size,
+                max_seg_len=None if kwargs['encoder_mask_type'] is None else kwargs['max_seg_len'],
+                do_masked_lm=kwargs['do_masked_lm'],
+            )
+        else:
+            return SegmentGPT2Enocder(
+                hug_name=hug_name,
+                pad_id=pad_id,
+                vocab_size=vocab_size,
+            )
 
     return SegmentLSTMEnocder(
         d_model=d_model,
@@ -284,7 +293,9 @@ class SegmentBiLSTMEnocder(nn.Module):
         return self.encoder.all_weights[-1][1][0]
 
 
-from transformers import BertModel
+from transformers import BertModel, AutoModel, BertConfig
+from transformers.models.bert.modeling_bert import BertOnlyMLMHead
+
 class SegmentBERTEnocder(nn.Module):
     def __init__(
         self,
@@ -292,6 +303,7 @@ class SegmentBERTEnocder(nn.Module):
         hug_name: str = 'bert-base-chinese',
         vocab_size: int = 21131,
         max_seg_len: int = None,
+        do_masked_lm: bool = False,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -304,9 +316,79 @@ class SegmentBERTEnocder(nn.Module):
         print(f'{self.embedding=}')
         print('-------')
         print('-------')
-        print('-------')
 
         self.max_seg_len = max_seg_len
+        self.vocab_size = vocab_size
+
+        if do_masked_lm:
+            config = BertConfig(hug_name)
+            config.vocab_size = vocab_size
+            self.cls = BertOnlyMLMHead(config)
+
+    def forward(self, x: Tensor, **kwargs):
+        embeds = self.embedding(x)
+        # attn_mask = (x != self.pad_id).bool().to(x.device)
+        attn_mask = self.generate_mask(x, self.max_seg_len)
+        output = self.encoder(inputs_embeds=embeds, attention_mask=attn_mask)
+
+        hidden_states = output.last_hidden_state
+
+        return SegmentOutput(
+            logits=None,
+            embeds=embeds,
+            decoder_hidden=hidden_states,
+        )
+
+    def generate_mask(self, x: Tensor, max_seg_len: int = None):
+        attn_mask = (x != self.pad_id).bool().to(x.device)
+        if max_seg_len:
+            seq_len = x.size(1)
+            # Make 3-dimension mask.
+            seg_mask = (torch.ones((seq_len, seq_len))) == 1
+            for i in range(seq_len):
+                for j in range(1, min(max_seg_len + 1, seq_len - i)):
+                    seg_mask[i, i + j] = False
+            # `seg_mask` shape: (1, S, S)
+            seg_mask = seg_mask[None, :, :].bool()
+            attn_mask = attn_mask[:, None, :,] & seg_mask.to(x.device)
+        return attn_mask
+
+    def emb2vocab(self, hidden: Tensor):
+        r"""Map embedding vectors to vocabulary."""
+        return hidden @ self.embedding.weight.transpose(0, 1)
+
+    def mlm_forward(self, x: Tensor, masked_labels: Tensor):
+        attn_mask = self.generate_mask(x)
+        output = self.encoder(input_ids=x, attention_mask=attn_mask)
+
+        hidden_states = output.last_hidden_state
+
+        # `logits` shape: (B, S, V)
+        logits = F.softmax(self.cls(hidden_states), dim=-1)
+
+        return F.cross_entropy(logits.reshape(-1, logits.size(-1)), masked_labels.reshape(-1), ignore_index=0)
+
+
+
+class SegmentGPT2Enocder(nn.Module):
+    def __init__(
+        self,
+        pad_id: int,
+        hug_name: str = 'ckiplab/gpt2-base-chinese',
+        vocab_size: int = 21131,
+        **kwargs,
+    ) -> None:
+        super().__init__()
+        self.pad_id = pad_id
+
+        self.encoder = AutoModel.from_pretrained(hug_name)
+        self.encoder.resize_token_embeddings(vocab_size)
+
+        self.embedding = self.encoder.get_input_embeddings()
+        print(f'{self.embedding=}')
+        print('-------')
+        print('-------')
+
 
     def forward(self, x: Tensor, **kwargs):
         embeds = self.embedding(x)
@@ -321,65 +403,6 @@ class SegmentBERTEnocder(nn.Module):
             decoder_hidden=hidden_states,
         )
 
-    def generate_mask(self, x: Tensor, max_seg_len: int = None):
-        attn_mask = (x != self.pad_id).bool()
-        if max_seg_len:
-            # Make 3-dimension mask.
-            seg_mask = self.generate_segment_mask(x.size(-1), max_seg_len)
-            attn_mask = attn_mask[:, None, :] & seg_mask.to(x.device)
-        return attn_mask
-
     def emb2vocab(self, hidden: Tensor):
         r"""Map embedding vectors to vocabulary."""
         return hidden @ self.embedding.weight.transpose(0, 1)
-
-import os
-# from codes.pytorch_hug_bert.modeling import BertModelSeg
-# class SegmentBERTSegEnocder(nn.Module):
-#     def __init__(
-#         self,
-#         pad_id: int,
-#         hug_name: str = 'bert-base-chinese',
-#         vocab_size: int = 21131,
-#         **kwargs,
-#     ) -> None:
-#         super().__init__()
-#         self.pad_id = pad_id
-
-#         bert_path = 'bert-base-chinese/pytorch_model.bin'
-#         print(os.path.exists(bert_path))
-#         model_bert = BertModelSeg.from_pretrained('bert-base-chinese', state_dict=torch.load(bert_path))
-#         model_bert.train()
-
-#         self.encoder = model_bert
-#         self.encoder.resize_token_embeddings(vocab_size)
-
-#         self.embedding = self.encoder.get_input_embeddings()
-#         print(f'{self.embedding=}')
-#         print('-------')
-#         print('-------')
-#         print('-------')
-
-#     def forward(self, x: Tensor, **kwargs):
-#         attn_mask = (x != self.pad_id).bool().to(x.device)
-#         output = self.encoder(input_ids=x, attention_mask=attn_mask)
-
-#         hidden_states = output[0]
-
-#         embeds = output[2]
-
-#         return SegmentOutput(
-#             logits=None,
-#             embeds=embeds,
-#             decoder_hidden=hidden_states,
-#         )
-
-#     def generate_mask(self, x: Tensor):
-#         attn_mask = (x != self.pad_id).bool()
-#         return attn_mask
-
-#     def emb2vocab(self, hidden: Tensor):
-#         r"""Map embedding vectors to vocabulary."""
-#         return hidden @ self.encoder.embeddings.word_embeddings.weight.transpose(0, 1)
-
-
