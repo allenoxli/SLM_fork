@@ -150,9 +150,9 @@ python -u -m codes.run \
     --adam_learning_rate 0.0005 \
     --warm_up_steps 800 \
     --train_steps 6000 \
-    --unsupervised_batch_size 8000 \
-    --predict_batch_size 500 \
-    --valid_batch_size 500 \
+    --unsupervised_batch_size 2000 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
     --segment_token "  " \
     --hug_name "bert-base-chinese" \
     --seed $SEED
@@ -187,8 +187,8 @@ python -u -m codes.run \
     --warm_up_steps 1000 \
     --train_steps 6000 \
     --unsupervised_batch_size 8000 \
-    --predict_batch_size 500 \
-    --valid_batch_size 1000 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
     --segment_token "  " \
     --hug_name "bert-base-chinese" \
     --encoder_mask_type "seg_mask" \
@@ -226,8 +226,8 @@ python -u -m codes.run_mlm \
     --warm_up_steps 800 \
     --train_steps 6000 \
     --unsupervised_batch_size 8000 \
-    --predict_batch_size 500 \
-    --valid_batch_size 500 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
     --segment_token "  " \
     --hug_name "bert-base-chinese" \
     --do_masked_lm \

@@ -293,7 +293,7 @@ class SegmentBiLSTMEnocder(nn.Module):
         return self.encoder.all_weights[-1][1][0]
 
 
-from transformers import BertModel, AutoModel, BertConfig
+from transformers import BertModel, AutoModel, BertConfig, BertForMaskedLM
 from transformers.models.bert.modeling_bert import BertOnlyMLMHead
 
 class SegmentBERTEnocder(nn.Module):
@@ -309,8 +309,14 @@ class SegmentBERTEnocder(nn.Module):
         super().__init__()
         self.pad_id = pad_id
 
-        self.encoder = BertModel.from_pretrained(hug_name)
-        self.encoder.resize_token_embeddings(vocab_size)
+        if do_masked_lm:
+            mlm_model = BertForMaskedLM.from_pretrained(hug_name)
+            mlm_model.resize_token_embeddings(vocab_size)
+            self.encoder = mlm_model.bert
+            self.cls = mlm_model.cls
+        else:
+            self.encoder = BertModel.from_pretrained(hug_name)
+            self.encoder.resize_token_embeddings(vocab_size)
 
         self.embedding = self.encoder.get_input_embeddings()
         print(f'{self.embedding=}')
@@ -320,10 +326,10 @@ class SegmentBERTEnocder(nn.Module):
         self.max_seg_len = max_seg_len
         self.vocab_size = vocab_size
 
-        if do_masked_lm:
-            config = BertConfig(hug_name)
-            config.vocab_size = vocab_size
-            self.cls = BertOnlyMLMHead(config)
+        # if do_masked_lm:
+        #     config = BertConfig(hug_name)
+        #     config.vocab_size = vocab_size
+        #     self.cls = BertOnlyMLMHead(config)
 
     def forward(self, x: Tensor, **kwargs):
         embeds = self.embedding(x)

@@ -81,7 +81,6 @@ def display(res, name):
         exp = exp.replace('unsupervised-', '')
         exp = exp.replace(f'-{name}', '')
         out_str += '|{}|{:.1f}|{:.1f}|{:.1f}|\n'.format(exp.ljust(7, " "), f1, precision, recall)
-
     out_str += '\n\n'
 
     return out_str

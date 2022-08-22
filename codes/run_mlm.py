@@ -405,6 +405,11 @@ def main(args):
                 logging.info('Overwriting best checkpoint....')
                 os.system('cp %s %s' % (os.path.join(args.save_path, 'checkpoint'),
                                         os.path.join(args.save_path, 'best-checkpoint')))
+
+            if F_score - best_F_score < -10:
+                logging.info('Early stopping.')
+                break
+
             # cls part.
             if args.iterative_train and step > args.iterative_train_steps:
                 if (F_score_cls > best_F_score_cls):

@@ -358,7 +358,7 @@ def main(args):
                 logging.info("Currently no metrics available")
             logs = []
 
-        if (step % args.save_every_steps == 0) or (step == args.train_steps - 1):
+        if (step % args.save_every_steps == 0) or (step == args.train_steps - 1) and (step > args.warm_up_steps):
             logging.info('Saving checkpoint %s...' % args.save_path)
             slm_config.to_json_file(os.path.join(args.save_path, 'config.json'))
             torch.save({
@@ -418,6 +418,10 @@ def main(args):
                 logging.info('Overwriting best checkpoint....')
                 os.system('cp %s %s' % (os.path.join(args.save_path, 'checkpoint'),
                                         os.path.join(args.save_path, 'best-checkpoint')))
+
+            if F_score - best_F_score <= -10:
+                break
+
             # cls part.
             if args.iterative_train and step > args.iterative_train_steps:
                 if (F_score_cls > best_F_score_cls):

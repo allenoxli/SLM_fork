@@ -214,3 +214,7 @@ p2 = 'data/msr/test_dset.pkl'
 a = load_pickle(p)
 b = load_pickle(p2)
 # %%
+from codes import model
+config_file = 'models/slm_as_4_config_bert_seg.json'
+config = model.SLMConfig.from_json_file(config_file)
+# %%
