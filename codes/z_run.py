@@ -54,7 +54,6 @@ def get_mask(
     # mask = mask.float().masked_fill(mask == 0, float('-inf'))
     return mask.bool()
 
-
 seq_len = 10
 shape = 'cloze'
 # shape = 'subsequent'
@@ -105,14 +104,25 @@ attn_weights[0, 0] == 0
 
 
 # %%
+import torch
+
 from transformers import BertModel, BertTokenizer
+def get_mask(
+    seq_len: int,
+    seg_len: int = None,
+):
+    mask = (torch.ones((seq_len, seq_len))) == 1
+    for i in range(seq_len):
+        for j in range(1, min(seg_len + 1, seq_len - i)):
+            mask[i, i + j] = False
+    # mask = mask.float().masked_fill(mask == 0, float('-inf'))
+    # mask = mask.masked_fill(mask == 1, float(0.0))
+    # mask = mask.float().masked_fill(mask == 0, float('-inf'))
+    return mask.bool()
+
 tk = BertTokenizer.from_pretrained("bert-base-chinese")
 m = BertModel.from_pretrained('bert-base-chinese')
 
-
-
-
-# %%
 
 inputs = tk(["今天的天氣很好", "今天的天氣"], return_tensors="pt", padding=True)
 
@@ -131,7 +141,78 @@ o = m(x, attn_mask, output_attentions=True)
 o.attentions[0].size()
 o.attentions[0]
 
+# %%
+import torch
+import torch.nn as nn
+import random
 
+x = torch.tensor([
+    [101,1,2,3,4,5,6,102, 0, 0, 0, 0],
+    [101,1,2,3,4,5,6,7,8,102, 0, 0],
+])
+lengths = torch.tensor([8, 10])
+print(x.size())
+
+# random mask to count masked_lm_loss
+masked_input_ids = torch.clone(x)
+masked_labels = torch.clone(x)
+
+ratio = .15
+mask_idxs = torch.rand(x.size()) <= ratio
+mask_idxs[:, 0] = False
+for idx, length in enumerate(lengths):
+    mask_idxs[idx, length-1:].fill_(False)
+
+print(mask_idxs)
+print(mask_idxs.sum())
+masked_input_ids[mask_idxs] = 103
+
+
+# %%
+def mask_word(x, length, mask_idx):
+    mask_idx[0] = False
+    mask_idx[length-1:] = False
+
+    for i in range(1, length-1):
+        if mask_idx[i]:
+            x[i] = 103 # id of [mask]
+    return x
+
+
+
+
+
+# %%
+from transformers.models.bert.modeling_bert import BertOnlyMLMHead, BertConfig,  BertLMHeadModel
+
+# config = BertConfig.from_json_file('bert-base-chinese-pytorch_model/bert_config.json')
+config = BertConfig.from_pretrained('bert-base-chinese')
+m = BertOnlyMLMHead(config)
+
+# %%
+config2 = BertConfig.from_pretrained('bert-base-chinese')
+config2.vocab_size = 21131
+config2
+m2 = BertOnlyMLMHead(config2)
+# %%
+from transformers.models.bert.modeling_bert import BertOnlyMLMHead, BertConfig,  BertLMHeadModel
+config = BertConfig.from_pretrained('bert-base-chinese')
+mm = BertLMHeadModel(config)
+
+# %%
+from transformers import BertConfig
+
+# %%
+import pickle
+p = 'data/msr/hug_test_dset.pkl'
+def load_pickle(file_name):
+    with open(file_name, 'rb') as f:
+        return pickle.load(f)
+
+a = load_pickle(p)
+p2 = 'data/msr/test_dset.pkl'
+a = load_pickle(p)
+b = load_pickle(p2)
 # %%
 seq_length = 12
 max_seg_len = 3

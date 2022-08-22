@@ -34,7 +34,7 @@ class SegmentDecoderLSTM(nn.Module):
         d_model: int,
         dec_n_layers: int,
         dropout: float = 0.1,
-        is_narrowed: bool = True,
+        is_narrowed: bool = False,
     ) -> None:
         super().__init__()
 

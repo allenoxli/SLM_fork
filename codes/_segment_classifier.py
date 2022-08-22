@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-
 from transformers import AutoModel
+
 from codes._segment_encoder import SegEmbedding, SegmentEncoder
 from codes._util import init_module
 

@@ -36,6 +36,8 @@ class InputDataset(data.Dataset):
 
         info = input_files[0].split('/')
         pkl_path = f'{info[0]}/{info[1]}/{name}_dset.pkl'
+        if len(tokenizer) == 21131:
+            pkl_path = f'{info[0]}/{info[1]}/hug_{name}_dset.pkl'
         print(f'current_path: {pkl_path}')
         if os.path.exists(pkl_path):
             print('Loading pkl dset ==========')

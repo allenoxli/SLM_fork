@@ -103,6 +103,9 @@ def parse_args(args=None):
 
     parser.add_argument("--seed", type=int, default=42) # 42, 87, 5253
 
+    parser.add_argument("--do_masked_lm", action='store_true')
+    parser.add_argument("--mlm_train_steps", type=int, default=500)
+    parser.add_argument("--mask_ratio", type=float, default=.15)
 
     return parser.parse_args(args)
 
@@ -137,7 +140,7 @@ def eval(eval_command, attr, out_path, is_pred=False):
 
 def main(args):
     device, tokenizer, slm_config, slm = first_part(args)
-    logging.info(f'{next(slm.parameters()).device=}')
+
     logs = []
 
     print('======')
@@ -198,23 +201,6 @@ def main(args):
             collate_fn=InputDataset.single_collate
         )
         unsupervised_data_iterator = OneShotIterator(unsupervised_dataloader)
-
-    if args.do_supervised:
-        logging.info('Prepare supervised dataloader')
-        supervsied_dataset = InputDataset(
-            args.segmented,
-            tokenizer,
-            is_training=True,
-            batch_token_size=args.supervised_batch_size
-        )
-        supervised_dataloader = data.DataLoader(
-            supervsied_dataset,
-            num_workers=args.cpu_num,
-            batch_size=1,
-            shuffle=False,
-            collate_fn=InputDataset.single_collate
-        )
-        supervised_data_iterator = OneShotIterator(supervised_dataloader)
 
     if args.do_valid:
         logging.info('Prepare validation dataloader')
@@ -314,11 +300,12 @@ def main(args):
 
                 loss += cls_loss
 
-        elif args.do_supervised:
-            x_batch, seq_len_batch, uchars_batch, segments_batch = next(supervised_data_iterator)
-            x_batch = x_batch.to(device)
-            loss = slm(x_batch, seq_len_batch, segments_batch, mode='supervised')
-            log['supervised_loss'] = loss.item()
+                if step > args.mlm_train_steps:
+                    mlm_loss = slm.mlm_forward(x=x_batch, lengths=seq_len_batch, ratio=args.mask_ratio)
+                    log['mlm_loss'] = mlm_loss.item()
+
+                    loss += mlm_loss
+
 
         logs.append(log)
 
@@ -714,11 +701,9 @@ def first_part(args):
         init_embedding=init_embedding,
         hug_name=args.hug_name,
         encoder_mask_type=args.encoder_mask_type,
-        do_masked_lm=False,
+        do_masked_lm=args.do_masked_lm,
     )
     logging.info('Model Info:\n%s' % slm)
-
-
 
     return device, tokenizer, slm_config, slm.to(device)
 

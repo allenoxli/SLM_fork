@@ -46,6 +46,8 @@ class SegmentOutput(BaseModelOuput):
     def __init__(self, **kwarg):
         super().__init__(**kwarg)
 
+        self.masked_loss = kwarg.get('masked_loss')
+
     def log_model_value(self, writer, step):
         self.log_value(writer, step, self.decoder_hidden[0].sum(dim=-1), 'decoder_hidden')
 
