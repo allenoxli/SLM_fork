@@ -1,10 +1,14 @@
 .vscode
 zip_file
 go*.sh
+z*.sh
+
 models_*
 output
 log
 bert-base-chinese
+data
+
 
 *.pkl
 

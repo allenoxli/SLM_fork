@@ -300,11 +300,11 @@ def main(args):
 
                 loss += cls_loss
 
-                if step > args.mlm_train_steps:
-                    mlm_loss = slm.mlm_forward(x=x_batch, lengths=seq_len_batch, ratio=args.mask_ratio)
-                    log['mlm_loss'] = mlm_loss.item()
+            if step > args.mlm_train_steps:
+                mlm_loss = slm.mlm_forward(x=x_batch, lengths=seq_len_batch, ratio=args.mask_ratio)
+                log['mlm_loss'] = mlm_loss.item()
 
-                    loss += mlm_loss
+                loss += mlm_loss
 
 
         logs.append(log)
@@ -405,6 +405,11 @@ def main(args):
                 logging.info('Overwriting best checkpoint....')
                 os.system('cp %s %s' % (os.path.join(args.save_path, 'checkpoint'),
                                         os.path.join(args.save_path, 'best-checkpoint')))
+
+            if F_score - best_F_score < -10:
+                logging.info('Early stopping.')
+                break
+
             # cls part.
             if args.iterative_train and step > args.iterative_train_steps:
                 if (F_score_cls > best_F_score_cls):

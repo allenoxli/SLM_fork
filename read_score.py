@@ -80,8 +80,7 @@ def display(res, name):
             continue
         exp = exp.replace('unsupervised-', '')
         exp = exp.replace(f'-{name}', '')
-        out_str += '|{}|{:.1f}|{:.1f}|{:.1f}|\n'.format(exp.ljust(7, " "), f1, precision, recall)
-
+        out_str += '|{}|{:.1f}|{:.1f}|{:.1f}|\n'.format(exp.ljust(11, " "), f1, precision, recall)
     out_str += '\n\n'
 
     return out_str
@@ -93,7 +92,7 @@ res = sorted(res.items(), key=lambda x: x[0])
 
 file_str = f'\n=== {model_path} ===\n'
 file_str += display(res, 'seg')
-file_str += display(res, 'cls')
+# file_str += display(res, 'cls')
 
 print(file_str)
 with open(f'{model_path}/read_result.txt', 'w') as f_out:

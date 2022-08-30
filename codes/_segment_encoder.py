@@ -57,7 +57,6 @@ class SegEmbedding(nn.Module):
 
         return embeds
 
-
 def SegmentEncoder(
         d_model: int,
         d_ff: int,
@@ -293,8 +292,8 @@ class SegmentBiLSTMEnocder(nn.Module):
         return self.encoder.all_weights[-1][1][0]
 
 
-from transformers import BertModel, AutoModel, BertConfig, BertForMaskedLM
-from transformers.models.bert.modeling_bert import BertOnlyMLMHead
+from transformers import BertModel, AutoModel, BertForMaskedLM
+# from transformers.models.bert.modeling_bert import BertOnlyMLMHead
 
 class SegmentBERTEnocder(nn.Module):
     def __init__(
@@ -309,22 +308,6 @@ class SegmentBERTEnocder(nn.Module):
         super().__init__()
         self.pad_id = pad_id
 
-        # self.encoder = BertModel.from_pretrained(hug_name)
-        # self.encoder.resize_token_embeddings(vocab_size)
-
-        # self.embedding = self.encoder.get_input_embeddings()
-        # print(f'{self.embedding=}')
-        # print('-------')
-        # print('-------')
-
-        # self.max_seg_len = max_seg_len
-        # self.vocab_size = vocab_size
-
-        # if do_masked_lm:
-        #     config = BertConfig(hug_name)
-        #     config.vocab_size = vocab_size
-        #     self.cls = BertOnlyMLMHead(config)
-
         if do_masked_lm:
             mlm_model = BertForMaskedLM.from_pretrained(hug_name)
             mlm_model.resize_token_embeddings(vocab_size)
@@ -337,11 +320,9 @@ class SegmentBERTEnocder(nn.Module):
         self.embedding = self.encoder.get_input_embeddings()
         print(f'{self.embedding=}')
         print('-------')
-        print('-------')
 
         self.max_seg_len = max_seg_len
         self.vocab_size = vocab_size
-
 
     def forward(self, x: Tensor, **kwargs):
         embeds = self.embedding(x)
@@ -386,6 +367,74 @@ class SegmentBERTEnocder(nn.Module):
 
         return F.cross_entropy(logits.reshape(-1, logits.size(-1)), masked_labels.reshape(-1), ignore_index=0)
 
+    # @torch.no_grad()
+    def perturbating_impact_matrix(self, x: Tensor, pertur_bz: int=128):
+        device = x.device
+        input_ids, attention_mask = x, (x != 0)
+
+        seq_len = input_ids.size(1) - 2
+        ninput_ids = input_ids.unsqueeze(1).repeat(1, (2*seq_len -1), 1)
+        nattention_mask = attention_mask.unsqueeze(1).repeat(1, (2*seq_len -1), 1)
+
+        # Mask.
+        for i in range(seq_len):
+            if i > 0:
+                ninput_ids[:, 2 * i - 1, i] = 103 # id of [mask]
+                ninput_ids[:, 2 * i - 1, i + 1] = 103 # id of [mask]
+            ninput_ids[:, 2 * i, i + 1] = 103 # id of [mask]
+
+        batch_num = ninput_ids.size(0) * ninput_ids.size(1)
+        if batch_num % pertur_bz == 0:
+            batch_num = batch_num // pertur_bz
+        else:
+            batch_num = batch_num // pertur_bz + 1
+
+        # `ninput_ids` shape: ( B*(2*S-1), S)
+        ninput_ids = ninput_ids.view(-1, ninput_ids.size(-1))
+        nattention_mask = nattention_mask.view(-1, nattention_mask.size(-1))
+        small_batches = [
+            {
+                'input_ids': ninput_ids[num*pertur_bz : (num+1)*pertur_bz].to(device),
+                'attention_mask': nattention_mask[num*pertur_bz : (num+1)*pertur_bz].to(device),
+            } for num in range(batch_num)]
+
+        # `vectors` shape: (B*(2*S-1), S, H)
+        vectors = None
+        for input in small_batches:
+            if vectors is None:
+                vectors = self.encoder(**input).last_hidden_state.detach()
+                continue
+            vectors = torch.cat([vectors, self.encoder(**input).last_hidden_state.detach()], dim=0)
+
+        # `vec` shape (B, (2*S-1), S, H)
+        new_size = (input_ids.size(0), -1, vectors.size(1), vectors.size(2))
+        vec = vectors.view(new_size)
+
+
+        all_dis = []
+        for i in range(1, seq_len): # decide whether the i-th character and the (i+1)-th character should be in one word
+            d1 = self.dist(vec[:, 2 * i, i + 1], vec[:, 2 * i - 1, i + 1])
+            d2 = self.dist(vec[:, 2 * i - 2, i], vec[:, 2 * i - 1, i])
+            d = (d1 + d2) / 2
+
+            all_dis.append(d)
+        all_dis = torch.stack(all_dis, dim=1)
+
+        upper_bound = 12
+        # lower_bound = 8
+        labels = torch.where(all_dis>=upper_bound, 1, 0)
+        # labels = torch.where(all_dis>=upper_bound, 1, 0)
+
+        # shape (S-3, B)
+        # wo [CLS] [SEP] and relation matrix between each token.
+        return labels.transpose(0, 1)
+
+
+    # @torch.no_grad()
+    def dist(self, x, y):
+        return torch.sqrt(((x - y)**2).sum(-1))
+
+
 
 
 class SegmentGPT2Enocder(nn.Module):
@@ -404,7 +453,6 @@ class SegmentGPT2Enocder(nn.Module):
 
         self.embedding = self.encoder.get_input_embeddings()
         print(f'{self.embedding=}')
-        print('-------')
         print('-------')
 
 

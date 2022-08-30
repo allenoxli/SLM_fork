@@ -32,12 +32,16 @@ class InputDataset(data.Dataset):
 
         line_count = 0
 
-        name = 'train' if 'unsegmented' in input_files[0] else 'test'
-
         info = input_files[0].split('/')
+
+        name = 'test'
+        if info[-1] == 'unsegmented.txt':
+            name = 'train'
+        elif info[-1] == 'segmented.txt':
+            name = 'train_seg'
+
+        name = f'hug_{name}' if len(tokenizer) == 21131 else name
         pkl_path = f'{info[0]}/{info[1]}/{name}_dset.pkl'
-        if len(tokenizer) == 21131:
-            pkl_path = f'{info[0]}/{info[1]}/hug_{name}_dset.pkl'
         print(f'current_path: {pkl_path}')
         if os.path.exists(pkl_path):
             print('Loading pkl dset ==========')
@@ -305,3 +309,4 @@ class OneShotIterator(object):
 # # texts = torch.LongTensor(texts)
 # # labels = torch.LongTensor(labels)
 # # %%
+

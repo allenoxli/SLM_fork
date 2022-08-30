@@ -88,20 +88,12 @@ class SLMConfig(object):
             writer.write(self.to_json_string())
 
 class SegmentalLM(nn.Module):
-    """
-    SLM (Segmental Language Model)
-    """
-
     def __init__(
         self,
         config,
         init_embedding = None,
         **kwargs,
     ):
-        """
-        Constructor for BertModel.
-        """
-
         super(SegmentalLM, self).__init__()
 
         config = copy.deepcopy(config)
@@ -180,6 +172,7 @@ class SegmentalLM(nn.Module):
             dec_n_layers=config.decoder_layer_number,
             dec_n_heads=dec_n_heads,
             dropout=config.decoder_dropout_rate,
+            dim_narrow=kwargs['dim_narrow'],
         )
 
         # self.segment_decoder = SegmentDecoder2(
@@ -202,7 +195,7 @@ class SegmentalLM(nn.Module):
         #     config.hidden_size
         # )
 
-    def forward(self, x, lengths, segments=None, mode='unsupervised'):
+    def forward(self, x, lengths, segments=None, mode='unsupervised', no_single:bool=False, is_impacted: bool =False):
         if mode == 'supervised' and segments is None:
             raise ValueError('Supervised mode needs segmented text.')
 
@@ -224,14 +217,21 @@ class SegmentalLM(nn.Module):
         # if self.config.embedding_size != self.config.hidden_size:
         #     inputs = self.embedding2hidden(inputs)
 
+        # `impact_matrix` shape: (S-3, B)
+        impact_matrix = torch.zeros_like(x)
+        if is_impacted:
+            impact_matrix = self.context_encoder.perturbating_impact_matrix(x.transpose(0, 1).contiguous())
+            impact_matrix = torch.cat([impact_matrix, torch.zeros(1, impact_matrix.size(-1)).to(impact_matrix.device)], dim=0)
+
         # `is_single` shape: (S, B)
         is_single = -loginf * ((x == self.config.punc_id) | (x == self.config.eng_id) | (x == self.config.num_id)).type_as(x)
 
-        if mode == 'supervised':
+        if mode == 'supervised' or no_single:
           is_single = torch.zeros_like(is_single)
 
         neg_inf_vector = torch.full_like(inputs[0,:,0], -loginf)
 
+        # `logpy` shape: (S-1, max_seg_len, B)
         logpy = neg_inf_vector.repeat(max_length - 1, self.config.max_segment_length, 1)
         logpy[0][0] = 0
 
@@ -277,14 +277,15 @@ class SegmentalLM(nn.Module):
 
             tmp_logpy = torch.zeros_like(target_logpy[0])
 
-            #j is a temporary j_end
+            # j is a temporary j_end
             for j in range(j_start, j_end):
                 tmp_logpy = tmp_logpy + target_logpy[j - j_start, :]
                 if j > j_start:
                     tmp_logpy = tmp_logpy + is_single[j, :]
                 if j == j_start + 1:
                     tmp_logpy = tmp_logpy + is_single[j_start, :]
-                logpy[j_start][j - j_start] = tmp_logpy + decoder_logpy[j - j_start + 1, :, self.config.eos_id]
+                
+                logpy[j_start][j - j_start] = tmp_logpy + decoder_logpy[j - j_start + 1, :, self.config.eos_id] + impact_matrix[j -1,:]
 
         if mode == 'unsupervised' or mode == 'supervised':
 
@@ -330,11 +331,12 @@ class SegmentalLM(nn.Module):
                             supervised_NLL_loss = supervised_NLL_loss - logpy[j_start][j_length - 1][i]
                             total_length += j_length
                         j_start += j_length
-
+                
                 normalized_supervised_NLL_loss = supervised_NLL_loss / float(total_length)
 
                 # normalized_NLL_loss = normalized_supervised_NLL_loss * 0.1 + normalized_NLL_loss
                 normalized_NLL_loss = normalized_supervised_NLL_loss # + normalized_NLL_loss
+
 
             return normalized_NLL_loss
 
@@ -594,7 +596,6 @@ class SegmentalLM(nn.Module):
         mlm_loss = self.context_encoder.mlm_forward(x=masked_input_ids, masked_labels=masked_labels)
 
         return mlm_loss
-
 
 
 class ContextEncoder(nn.Module):

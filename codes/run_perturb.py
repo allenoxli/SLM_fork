@@ -102,9 +102,6 @@ def parse_args(args=None):
     parser.add_argument("--is_narrowed", action='store_true')
     parser.add_argument("--dim_narrow", type=int, default=None)
 
-    
-    parser.add_argument("--is_impacted", action='store_true')
-    
 
     parser.add_argument("--no_single", action='store_true', help="Whether to force special token being segmented.")
 
@@ -288,7 +285,7 @@ def main(args):
         if args.do_unsupervised:
             x_batch, seq_len_batch, uchars_batch, segments_batch = next(unsupervised_data_iterator)
             x_batch = x_batch.to(device)
-            loss = slm(x_batch, seq_len_batch, mode='unsupervised', is_impacted=args.is_impacted)
+            loss = slm(x_batch, seq_len_batch, mode='unsupervised')
             log['unsupervised_loss'] = loss.item()
 
             # cls part.

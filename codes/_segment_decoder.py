@@ -10,6 +10,8 @@ def SegmentDecoder(
     dec_n_layers: int,
     dec_n_heads: int = None,
     dropout: float = 0.1,
+    dim_narrow: int = None,
+    **kwargs,
 ) -> None:
 
     if dec_n_heads:
@@ -18,12 +20,14 @@ def SegmentDecoder(
             dec_n_layers=dec_n_layers,
             dec_n_heads=dec_n_heads,
             dropout=dropout,
+            dim_narrow=dim_narrow,
         )
     else:
         model = SegmentDecoderLSTM(
             d_model=d_model,
             dec_n_layers=dec_n_layers,
             dropout=dropout,
+            dim_narrow=dim_narrow,
         )
 
     return model.apply(init_module)
@@ -34,16 +38,17 @@ class SegmentDecoderLSTM(nn.Module):
         d_model: int,
         dec_n_layers: int,
         dropout: float = 0.1,
-        is_narrowed: bool = False,
+        dim_narrow: int = None,
     ) -> None:
         super().__init__()
 
         self.dec_n_layers = dec_n_layers
 
-        dim_narrow = d_model // 4 if is_narrowed else d_model
-        print(is_narrowed)
-        print(dim_narrow)
-        if is_narrowed:
+        # dim_narrow = d_model // 4 if is_narrowed else d_model
+        dim_narrow = d_model if dim_narrow is None else dim_narrow
+
+        print(f'{dim_narrow=}')
+        if dim_narrow:
             self.narrow_linear = nn.Linear(d_model, dim_narrow)
             self.narrow_segment_decoder_ff = nn.Linear((1+dec_n_layers) * d_model, (1+dec_n_layers) * dim_narrow)
             self.recover_linear = nn.Linear(dim_narrow, d_model)
