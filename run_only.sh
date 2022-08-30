@@ -164,12 +164,10 @@ elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert
 then
 echo "Start Unsupervised Training......"
 
-
 CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -196,8 +194,43 @@ python -u -m codes.run \
     --is_impacted \
     --seed $SEED
 
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_impact_mlm" ]
+then
+echo "Start Unsupervised Training......"
 
-# rm $MODEL_PATH/checkpoint
+CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
+
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
+
+python -u -m codes.run \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $UNSEGMENT_DATA  \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.0005 \
+    --warm_up_steps 800 \
+    --train_steps 6000 \
+    --unsupervised_batch_size 8000 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
+    --segment_token "  " \
+    --hug_name "bert-base-chinese" \
+    --is_impacted \
+    --upper_bound 10 \
+    --do_masked_lm \
+    --mlm_train_steps 0 \
+    --mask_ratio 0.15 \
+    --seed $SEED
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_no_single" ]
 then

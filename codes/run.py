@@ -104,9 +104,15 @@ def parse_args(args=None):
 
     
     parser.add_argument("--is_impacted", action='store_true')
+    parser.add_argument("--upper_bound", type=int, default=10)
     
 
     parser.add_argument("--no_single", action='store_true', help="Whether to force special token being segmented.")
+
+    parser.add_argument("--do_masked_lm", action='store_true')
+    parser.add_argument("--mlm_train_steps", type=int, default=500)
+    parser.add_argument("--mask_ratio", type=float, default=.15)
+
 
 
     return parser.parse_args(args)
@@ -288,7 +294,7 @@ def main(args):
         if args.do_unsupervised:
             x_batch, seq_len_batch, uchars_batch, segments_batch = next(unsupervised_data_iterator)
             x_batch = x_batch.to(device)
-            loss = slm(x_batch, seq_len_batch, mode='unsupervised', is_impacted=args.is_impacted)
+            loss = slm(x_batch, seq_len_batch, mode='unsupervised', is_impacted=args.is_impacted, upper_bound=args.upper_bound)
             log['unsupervised_loss'] = loss.item()
 
             # cls part.
@@ -311,6 +317,12 @@ def main(args):
                 log['cls_loss'] = cls_loss.item()
 
                 loss += cls_loss
+            
+            if step > args.mlm_train_steps:
+                mlm_loss = slm.mlm_forward(x=x_batch, lengths=seq_len_batch, ratio=args.mask_ratio)
+                log['mlm_loss'] = mlm_loss.item()
+
+                loss += mlm_loss
 
         elif args.do_supervised:
             x_batch, seq_len_batch, uchars_batch, segments_batch = next(supervised_data_iterator)
@@ -710,7 +722,7 @@ def first_part(args):
         init_embedding=init_embedding,
         hug_name=args.hug_name,
         encoder_mask_type=args.encoder_mask_type,
-        do_masked_lm=False,
+        do_masked_lm=args.do_masked_lm,
         dim_narrow=args.dim_narrow
     )
     logging.info('Model Info:\n%s' % slm)

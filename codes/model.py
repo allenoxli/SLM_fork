@@ -195,7 +195,17 @@ class SegmentalLM(nn.Module):
         #     config.hidden_size
         # )
 
-    def forward(self, x, lengths, segments=None, mode='unsupervised', no_single:bool=False, is_impacted: bool =False):
+    def forward(
+        self,
+        x,
+        lengths,
+        segments=None,
+        mode: str='unsupervised',
+        no_single: bool=False,
+        is_impacted: bool=False,
+        upper_bound: int=10,
+        **kwargs,
+    ):
         if mode == 'supervised' and segments is None:
             raise ValueError('Supervised mode needs segmented text.')
 
@@ -213,19 +223,16 @@ class SegmentalLM(nn.Module):
         lm_output = self.context_encoder(x.transpose(0, 1).contiguous())
         inputs = lm_output.embeds.transpose(0, 1)
         encoder_output = lm_output.decoder_hidden.transpose(0, 1)
-        # inputs = self.embedding(x)
-        # if self.config.embedding_size != self.config.hidden_size:
-        #     inputs = self.embedding2hidden(inputs)
 
         # `impact_matrix` shape: (S-3, B)
         impact_matrix = torch.zeros_like(x)
         if is_impacted:
-            impact_matrix = self.context_encoder.perturbating_impact_matrix(x.transpose(0, 1).contiguous())
+            impact_matrix = self.context_encoder.perturbating_impact_matrix(x.transpose(0, 1).contiguous(), upper_bound=upper_bound)
+            # `impact_matrix` shape: (S-2, B)
             impact_matrix = torch.cat([impact_matrix, torch.zeros(1, impact_matrix.size(-1)).to(impact_matrix.device)], dim=0)
 
         # `is_single` shape: (S, B)
         is_single = -loginf * ((x == self.config.punc_id) | (x == self.config.eng_id) | (x == self.config.num_id)).type_as(x)
-
         if mode == 'supervised' or no_single:
           is_single = torch.zeros_like(is_single)
 
@@ -235,11 +242,6 @@ class SegmentalLM(nn.Module):
         logpy = neg_inf_vector.repeat(max_length - 1, self.config.max_segment_length, 1)
         logpy[0][0] = 0
 
-        # Context Encoder
-        # inputs = self.encoder_input_dropout(inputs)
-        # encoder_init_states = self.context_encoder.get_init_states(batch_size)
-        # encoder_output = self.context_encoder(inputs, lengths, encoder_init_states)
-
         # Make context encoder and segment decoder have different learning rate
         encoder_output = encoder_output * 0.5
 
@@ -248,22 +250,8 @@ class SegmentalLM(nn.Module):
         # for j_start, j_len, j_end in schedule:
         for j_start in range(1, max_length - 1):
             j_end = j_start + min(self.config.max_segment_length, (max_length-1) - j_start)
-            # decoder_init = encoder_output[j_start-1, :, :]
+            # Segment Decoder
 
-            # start_symbol = self.start_of_segment(decoder_init).unsqueeze(0)
-
-            # decoder_h_init = torch.tanh(self.decoder_h_transformation(decoder_init))
-            # decoder_h_init = decoder_h_init.view(batch_size, self.config.decoder_layer_number, -1)
-            # decoder_h_init = torch.transpose(decoder_h_init, 0, 1).contiguous()
-
-            # decoder_c_init = torch.zeros_like(decoder_h_init)
-            # decoder_init_states = (decoder_h_init, decoder_c_init)
-
-            # decoder_input = self.decoder_input_dropout(inputs[j_start:j_end, :, :])
-            # decoder_input = torch.cat([start_symbol, decoder_input], dim=0).contiguous()
-
-            #Segment Decoder
-            # decoder_output = self.segment_decoder(decoder_input, decoder_init_states)
             decoder_output = self.segment_decoder(
                 seg_start_hidden=seg_dec_hiddens[j_start-1, :, :].unsqueeze(0),
                 seg_embeds=self.decoder_input_dropout(inputs[j_start:j_end, :, :]),
@@ -277,15 +265,18 @@ class SegmentalLM(nn.Module):
 
             tmp_logpy = torch.zeros_like(target_logpy[0])
 
-            # j is a temporary j_end
+            # j is a temporary j_end.
             for j in range(j_start, j_end):
                 tmp_logpy = tmp_logpy + target_logpy[j - j_start, :]
                 if j > j_start:
                     tmp_logpy = tmp_logpy + is_single[j, :]
                 if j == j_start + 1:
                     tmp_logpy = tmp_logpy + is_single[j_start, :]
-                
-                logpy[j_start][j - j_start] = tmp_logpy + decoder_logpy[j - j_start + 1, :, self.config.eos_id] + impact_matrix[j -1,:]
+
+                logpy[j_start][j - j_start] = tmp_logpy \
+                    + decoder_logpy[j - j_start + 1, :, self.config.eos_id] \
+                    + (1-impact_matrix[j -1,:])
+
 
         if mode == 'unsupervised' or mode == 'supervised':
 

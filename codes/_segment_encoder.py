@@ -367,8 +367,8 @@ class SegmentBERTEnocder(nn.Module):
 
         return F.cross_entropy(logits.reshape(-1, logits.size(-1)), masked_labels.reshape(-1), ignore_index=0)
 
-    # @torch.no_grad()
-    def perturbating_impact_matrix(self, x: Tensor, pertur_bz: int=128):
+    @torch.no_grad()
+    def perturbating_impact_matrix(self, x: Tensor, pertur_bz: int=256, upper_bound : int = 10):
         device = x.device
         input_ids, attention_mask = x, (x != 0)
 
@@ -392,11 +392,10 @@ class SegmentBERTEnocder(nn.Module):
         # `ninput_ids` shape: ( B*(2*S-1), S)
         ninput_ids = ninput_ids.view(-1, ninput_ids.size(-1))
         nattention_mask = nattention_mask.view(-1, nattention_mask.size(-1))
-        small_batches = [
-            {
-                'input_ids': ninput_ids[num*pertur_bz : (num+1)*pertur_bz].to(device),
-                'attention_mask': nattention_mask[num*pertur_bz : (num+1)*pertur_bz].to(device),
-            } for num in range(batch_num)]
+        small_batches = [{
+            'input_ids': ninput_ids[num*pertur_bz : (num+1)*pertur_bz].to(device),
+            'attention_mask': nattention_mask[num*pertur_bz : (num+1)*pertur_bz].to(device),
+        } for num in range(batch_num)]
 
         # `vectors` shape: (B*(2*S-1), S, H)
         vectors = None
@@ -410,27 +409,33 @@ class SegmentBERTEnocder(nn.Module):
         new_size = (input_ids.size(0), -1, vectors.size(1), vectors.size(2))
         vec = vectors.view(new_size)
 
-
         all_dis = []
         for i in range(1, seq_len): # decide whether the i-th character and the (i+1)-th character should be in one word
             d1 = self.dist(vec[:, 2 * i, i + 1], vec[:, 2 * i - 1, i + 1])
             d2 = self.dist(vec[:, 2 * i - 2, i], vec[:, 2 * i - 1, i])
             d = (d1 + d2) / 2
-
             all_dis.append(d)
+
+        # `all_dis` shape: (B, S-3)
         all_dis = torch.stack(all_dis, dim=1)
 
-        upper_bound = 12
-        # lower_bound = 8
+        # if d > upper_bound, then we combine the two tokens, else if d <= lower_bound then we segment them.
         labels = torch.where(all_dis>=upper_bound, 1, 0)
         # labels = torch.where(all_dis>=upper_bound, 1, 0)
+
+        # # (B, S)
+        # labels = torch.cat([
+        #     torch.zeros(labels.size(0), 2).to(device),
+        #     labels,
+        #     torch.zeros(labels.size(0), 1).to(device)
+        # ], dim=-1)
 
         # shape (S-3, B)
         # wo [CLS] [SEP] and relation matrix between each token.
         return labels.transpose(0, 1)
 
 
-    # @torch.no_grad()
+    @torch.no_grad()
     def dist(self, x, y):
         return torch.sqrt(((x - y)**2).sum(-1))
 
