@@ -676,3 +676,7 @@ torch.scatter(src=a, dim=1, index=idx)
 
 
 # %%
+from codes import model
+config_file = 'models/slm_as_4_config_bert_seg.json'
+config = model.SLMConfig.from_json_file(config_file)
+# %%
