@@ -1,3 +1,4 @@
+r"""目前 bert 使用的 tokenizer，功能整合 SLM 版本。"""
 # %%
 from transformers import AutoTokenizer
 

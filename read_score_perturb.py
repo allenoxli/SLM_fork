@@ -1,16 +1,13 @@
 
 import argparse
-import re
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--name', type=str, default='models_normal_87')
+parser.add_argument('--name', type=str, default='log/perturbed_masking/')
 
 args = parser.parse_args()
 
 model_path = args.name
-
-# model_path = 'models_classifier'
 
 res = {}
 def read_score(file_path):
@@ -65,7 +62,12 @@ def display(res):
 
 
 
-res = sorted(res.items(), key=lambda x: x[0])
+# res = sorted(res.items(), key=lambda x: x[0])
+
+res = sorted(
+    res.items(),
+    key=lambda x: int(x[0].split('_')[0].replace('bound', ''))
+)
 
 
 file_str = f'\n=== {model_path} ===\n'

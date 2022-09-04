@@ -2,6 +2,7 @@
 zip_file
 go*.sh
 z*.sh
+cal.py
 
 models_*
 output

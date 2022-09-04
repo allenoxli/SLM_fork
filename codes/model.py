@@ -109,10 +109,13 @@ class SegmentalLM(nn.Module):
             shard_embedding = torch.zeros(config.vocab_size, config.embedding_size)
             nn.init.uniform_(shard_embedding, a=-1.0, b=1.0)
 
+        # manual setting.
+        # Decide the model type of enocder and decoder.(transformer-based, bi-lstm or lstm)
         n_heads = None
         dec_n_heads = None
-        pad_id = 0
         bidirectional = False
+
+        pad_id = 0
 
         # self.embedding = nn.Embedding.from_pretrained(shard_embedding)
         self.embedding = SegEmbedding(
@@ -130,16 +133,6 @@ class SegmentalLM(nn.Module):
 
         # self.embedding2vocab = nn.Linear(config.embedding_size, config.vocab_size)
         self.embedding2vocab = self.embedding.emb2vocab
-
-        # Weight Tying
-        # self.embedding2vocab.weight = self.embedding.weight
-
-        # self.context_encoder = ContextEncoder(
-        #     input_size=config.embedding_size,
-        #     hidden_size=config.hidden_size,
-        #     layer_number=config.encoder_layer_number,
-        #     dropout_rate=config.encoder_dropout_rate
-        # )
 
         self.context_encoder = SegmentEncoder(
             d_model=config.embedding_size,
@@ -175,25 +168,8 @@ class SegmentalLM(nn.Module):
             dim_narrow=kwargs['dim_narrow'],
         )
 
-        # self.segment_decoder = SegmentDecoder2(
-        #     hidden_size=config.hidden_size,
-        #     output_size=config.embedding_size,
-        #     layer_number=config.decoder_layer_number,
-        #     dropout_rate=config.decoder_dropout_rate
-        # )
-
-        # self.decoder_h_transformation = nn.Linear(
-        #     config.hidden_size,
-        #     config.decoder_layer_number * config.hidden_size
-        # )
-
         # self.encoder_input_dropout = nn.Dropout(p=config.encoder_input_dropout_rate)
         self.decoder_input_dropout = nn.Dropout(p=config.decoder_input_dropout_rate)
-
-        # self.start_of_segment = nn.Linear(
-        #     config.hidden_size,
-        #     config.hidden_size
-        # )
 
     def forward(
         self,
@@ -209,10 +185,10 @@ class SegmentalLM(nn.Module):
         if mode == 'supervised' and segments is None:
             raise ValueError('Supervised mode needs segmented text.')
 
-        #input format: (seq_len, batch_size)
+        # input format: (seq_len, batch_size)
         x = x.transpose(0, 1).contiguous()
 
-        #transformed format: (seq_len, batch_size)
+        # transformed format: (seq_len, batch_size)
         max_length = x.size(0)
         batch_size = x.size(1)
 
@@ -229,7 +205,7 @@ class SegmentalLM(nn.Module):
         if is_impacted:
             impact_matrix = self.context_encoder.perturbating_impact_matrix(x.transpose(0, 1).contiguous(), upper_bound=upper_bound)
             # `impact_matrix` shape: (S-2, B)
-            impact_matrix = torch.cat([impact_matrix, torch.zeros(1, impact_matrix.size(-1)).to(impact_matrix.device)], dim=0)
+            # impact_matrix = torch.cat([impact_matrix, torch.zeros(1, impact_matrix.size(-1)).to(impact_matrix.device)], dim=0)
 
         # `is_single` shape: (S, B)
         is_single = -loginf * ((x == self.config.punc_id) | (x == self.config.eng_id) | (x == self.config.num_id)).type_as(x)
@@ -244,14 +220,14 @@ class SegmentalLM(nn.Module):
 
         # Make context encoder and segment decoder have different learning rate
         encoder_output = encoder_output * 0.5
-
+        
+        # (S, B, (1+dec_n_layers) * d_model )
         seg_dec_hiddens = self.segment_decoder.gen_start_symbol_hidden(encoder_output)
 
-        # for j_start, j_len, j_end in schedule:
         for j_start in range(1, max_length - 1):
             j_end = j_start + min(self.config.max_segment_length, (max_length-1) - j_start)
-            # Segment Decoder
 
+            # Segment Decoder
             decoder_output = self.segment_decoder(
                 seg_start_hidden=seg_dec_hiddens[j_start-1, :, :].unsqueeze(0),
                 seg_embeds=self.decoder_input_dropout(inputs[j_start:j_end, :, :]),
@@ -273,10 +249,12 @@ class SegmentalLM(nn.Module):
                 if j == j_start + 1:
                     tmp_logpy = tmp_logpy + is_single[j_start, :]
 
+                impact_value = 0
+                if j != max_length-2:
+                    impact_value = -1 * (1 - impact_matrix[j -1,:])
                 logpy[j_start][j - j_start] = tmp_logpy \
                     + decoder_logpy[j - j_start + 1, :, self.config.eos_id] \
-                    + (1-impact_matrix[j -1,:])
-
+                    + impact_value
 
         if mode == 'unsupervised' or mode == 'supervised':
 
@@ -294,14 +272,9 @@ class SegmentalLM(nn.Module):
             NLL_loss = 0.0
             total_length = 0
 
-            # alphas = torch.stack(alpha)
-            alphas = alpha
             index = (torch.LongTensor(lengths) - 2).view(1, -1)
 
-            if alphas.is_cuda:
-                index = index.cuda()
-
-            NLL_loss = - torch.gather(input=alphas, dim=0, index=index)
+            NLL_loss = - torch.gather(input=alpha, dim=0, index=index.to(x.device))
 
             assert NLL_loss.view(-1).size(0) == batch_size
 
@@ -327,7 +300,6 @@ class SegmentalLM(nn.Module):
 
                 # normalized_NLL_loss = normalized_supervised_NLL_loss * 0.1 + normalized_NLL_loss
                 normalized_NLL_loss = normalized_supervised_NLL_loss # + normalized_NLL_loss
-
 
             return normalized_NLL_loss
 
@@ -582,64 +554,9 @@ class SegmentalLM(nn.Module):
         for idx, length in enumerate(lengths):
             mask_idxs[idx, length-1:].fill_(False)
 
-        masked_input_ids[mask_idxs] = 103
+        masked_input_ids[mask_idxs==True] = 103 # mask index.
+        masked_labels[mask_idxs==False] = 0  # ignored index.
 
         mlm_loss = self.context_encoder.mlm_forward(x=masked_input_ids, masked_labels=masked_labels)
 
         return mlm_loss
-
-
-class ContextEncoder(nn.Module):
-    def __init__(self, input_size, hidden_size, layer_number, dropout_rate):
-        super(ContextEncoder, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.rnn = nn.LSTM(
-            input_size=hidden_size,
-            hidden_size=hidden_size,
-            num_layers=layer_number,
-            dropout=dropout_rate
-        )
-        #num_layers * num_directions, batch, hidden_size
-        self.h_init_state = nn.Parameter(torch.zeros(layer_number, 1, hidden_size))
-        self.c_init_state = nn.Parameter(torch.zeros(layer_number, 1, hidden_size))
-        if self.input_size != self.hidden_size:
-            self.embedding2hidden = nn.Linear(input_size, hidden_size)
-
-    def forward(self, rnn_input, lengths, init_states):
-        if self.input_size != self.hidden_size:
-            rnn_input = self.embedding2hidden(rnn_input)
-        self.rnn.flatten_parameters()
-        rnn_input = nn.utils.rnn.pack_padded_sequence(rnn_input, lengths)
-        output, _ = self.rnn(rnn_input, init_states)
-        output, _ = nn.utils.rnn.pad_packed_sequence(output)
-        return output
-
-    def get_init_states(self, batch_size):
-        return (self.h_init_state.expand(-1, batch_size, -1).contiguous(),
-                self.c_init_state.expand(-1, batch_size, -1).contiguous())
-
-class SegmentDecoder2(nn.Module):
-    def __init__(self, hidden_size, output_size, layer_number, dropout_rate):
-        super(SegmentDecoder2, self).__init__()
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.rnn = nn.LSTM(
-            input_size=hidden_size,
-            hidden_size=hidden_size,
-            num_layers=layer_number,
-            dropout=dropout_rate
-        )
-        if self.hidden_size != self.output_size:
-            self.hidden2embedding = nn.Linear(hidden_size, output_size)
-        self.output_dropout = nn.Dropout(p=dropout_rate)
-
-    def forward(self, rnn_input, init_states):
-        self.rnn.flatten_parameters()
-        output, _ = self.rnn(rnn_input, init_states)
-        if self.hidden_size != self.output_size:
-            output = self.hidden2embedding(output)
-        output = self.output_dropout(output)
-
-        return output
-

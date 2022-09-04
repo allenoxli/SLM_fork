@@ -680,3 +680,24 @@ from codes import model
 config_file = 'models/slm_as_4_config_bert_seg.json'
 config = model.SLMConfig.from_json_file(config_file)
 # %%
+
+from transformers import AutoModel, BertToken
+name = 'hfl/chinese-roberta-wwm-ext'
+model = AutoModel.from_pretrained(name)
+
+model
+
+
+# %%
+from transformers import AutoTokenizer, AutoModelForMaskedLM
+tk = AutoTokenizer.from_pretrained("bert-base-chinese")
+# %%
+ids = tk('我們，你們').input_ids
+print(ids)
+print(tk.convert_ids_to_tokens(ids))
+
+
+# %%
+tk_hfl = AutoTokenizer.from_pretrained("hfl/chinese-roberta-wwm-ext")
+
+# %%

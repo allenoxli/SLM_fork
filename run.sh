@@ -44,14 +44,12 @@ CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config.json
 INIT_EMBEDDING_PATH=data/vocab/embedding.npy
 VOCAB_FILE=data/vocab/vocab.txt
 
-if [ $EXTRY == "bert" ]
-then
-CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert.json
 
-elif [ $EXTRY == "bert_seg" ]
+if [[ "$dir" == *"bert"* ]];
 then
-CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert_seg.json
+    CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert.json
 fi
+
 echo $CONFIG_FILE
 
 
@@ -88,7 +86,6 @@ python -u -m codes.run \
     --seed $SEED
 
 
-rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "gpt" ]
 then
@@ -96,7 +93,6 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_gpt2.json
 
@@ -131,7 +127,6 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -158,7 +153,6 @@ python -u -m codes.run \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
 
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_seg" ]
@@ -167,7 +161,6 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -195,7 +188,6 @@ python -u -m codes.run \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
 
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_mlm" ]
@@ -204,9 +196,6 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
-
-CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert.json
 
 python -u -m codes.run_mlm \
     --use_cuda \
@@ -235,7 +224,6 @@ python -u -m codes.run_mlm \
     --mask_ratio 0.15 \
     --seed $SEED
 
-# rm $MODEL_PATH/checkpoint
 
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_seg_mlm" ]
@@ -244,7 +232,6 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert_seg.json
 
@@ -277,7 +264,6 @@ python -u -m codes.run_mlm \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
 
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "classifier" ]
@@ -286,7 +272,6 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -315,7 +300,6 @@ python -u -m codes.run \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative" ]
 then
@@ -351,7 +335,6 @@ python -u -m codes.run \
     --iterative_train \
     --seed $SEED
 
-# rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative_lm" ]
 then
@@ -389,7 +372,6 @@ python -u -m codes.run_lm \
     --lm_train_steps 2000 \
     --seed $SEED
 
-# rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "circular" ]
 then
@@ -427,7 +409,6 @@ python -u -m codes.run_circular \
     --seed $SEED
 
 
-rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "cls" ]
 then
@@ -462,7 +443,6 @@ python -u codes/run_cls.py \
     --do_classifier
 
 
-rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "supervised" ] && [ $EXTRY == "normal" ]
 then
@@ -494,7 +474,6 @@ python -u -m codes.run \
     --valid_batch_size 500 \
     --segment_token "  "
 
-# rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "supervised" ] && [ $EXTRY == "bert" ]
 then
@@ -525,7 +504,6 @@ python -u -m codes.run \
     --hug_name "bert-base-chinese" \
     --segment_token "  "
 
-# rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "predict" ]
 then

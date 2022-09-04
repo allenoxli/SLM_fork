@@ -1,22 +1,11 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os
 import logging
-import pickle
 import random
 
 import torch
 from torch.utils import data
+from codes._util import load_pickle, save_pickle
 
-def load_pickle(file_name):
-    with open(file_name, 'rb') as f:
-        return pickle.load(f)
-
-
-def save_pickle(obj, name):
-    with open(name, 'wb') as f:
-        pickle.dump(obj, f)
 
 class InputDataset(data.Dataset):
     def __init__(self,

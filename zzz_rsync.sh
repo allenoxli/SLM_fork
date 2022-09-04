@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 
 # exp_list=("38_new_layer_norm_sigmoid_small_hug")
@@ -21,3 +21,4 @@ for exp in $exp_list;
 do
     rm -rf models_"$exp"
 done
+

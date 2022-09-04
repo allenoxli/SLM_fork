@@ -102,21 +102,17 @@ def parse_args(args=None):
     parser.add_argument("--is_narrowed", action='store_true')
     parser.add_argument("--dim_narrow", type=int, default=None)
 
-    
     parser.add_argument("--is_impacted", action='store_true')
     parser.add_argument("--upper_bound", type=int, default=10)
-    
 
     parser.add_argument("--no_single", action='store_true', help="Whether to force special token being segmented.")
 
     parser.add_argument("--do_masked_lm", action='store_true')
     parser.add_argument("--mlm_train_steps", type=int, default=500)
     parser.add_argument("--mask_ratio", type=float, default=.15)
-
-
+    parser.add_argument("--mlm_weight", type=float, default=1.0)
 
     return parser.parse_args(args)
-
 
 def eval(eval_command, attr, out_path, is_pred=False):
     logging.info(eval_command)
@@ -144,7 +140,6 @@ def eval(eval_command, attr, out_path, is_pred=False):
     print(f'{attr}: {F_score=}')
 
     return F_score
-
 
 def main(args):
     device, tokenizer, slm_config, slm = first_part(args)
@@ -255,18 +250,15 @@ def main(args):
         lr_lambda = lambda step: 1 if step < 0.8 * args.cls_train_steps else 0.1
         cls_scheduler = optim.lr_scheduler.LambdaLR(cls_adam_optimizer, lr_lambda=lr_lambda)
 
-
     global_step = 0
     best_F_score = 0
     best_F_score_cls = 0
 
-    init_slm_checkpoint = f'models_normal_8000step_{args.seed}/{MODE}-{DATA}-{MAX_SEG_LEN}/best-checkpoint'
+    # init_slm_checkpoint = f'models_normal_8000step_{args.seed}/{MODE}-{DATA}-{MAX_SEG_LEN}/best-checkpoint'
     init_slm_checkpoint = 'None'
     if os.path.exists(init_slm_checkpoint):
         logging.info('Loading SLM checkpoint %s...' % init_slm_checkpoint)
-        print('==========')
-        print('LOAD')
-        print('==========')
+        print('==========\n LOAD \n==========')
         checkpoint = torch.load(init_slm_checkpoint)
         global_step = checkpoint['global_step']
         best_F_score = checkpoint['best_F_score']
@@ -280,7 +272,7 @@ def main(args):
     # Tensorboard writer.
     writer = SummaryWriter(args.save_path)
 
-    # SLM traiing.
+    # SLM training.
     # Start to training.
     for step in range(global_step, args.train_steps):
 
@@ -318,11 +310,11 @@ def main(args):
 
                 loss += cls_loss
             
-            if step > args.mlm_train_steps:
+            if args.do_masked_lm and step > args.mlm_train_steps:
                 mlm_loss = slm.mlm_forward(x=x_batch, lengths=seq_len_batch, ratio=args.mask_ratio)
                 log['mlm_loss'] = mlm_loss.item()
 
-                loss += mlm_loss
+                loss += mlm_loss * args.mlm_weight
 
         elif args.do_supervised:
             x_batch, seq_len_batch, uchars_batch, segments_batch = next(supervised_data_iterator)
@@ -586,6 +578,7 @@ def main(args):
                     os.system('cp %s %s' % (os.path.join(args.save_path, 'cls_checkpoint'),
                                             os.path.join(args.save_path, 'best-cls_checkpoint')))
 
+    # 選最好的 checkpoint 對 `test_gold.txt` 進行 evaluation.
     if args.do_predict:
         logging.info('Prepare prediction dataloader')
         logging.info('===== Start to SLM predict =====')
@@ -596,7 +589,7 @@ def main(args):
             dataset=predict_dataset,
             shuffle=False,
             batch_size=args.predict_batch_size,
-            num_workers=0,
+            num_workers=4,
             collate_fn=InputDataset.padding_collate
         )
 
@@ -662,18 +655,6 @@ def main(args):
     writer.close()
 
 def first_part(args):
-    if args.do_unsupervised and not args.unsegmented:
-        raise ValueError("Unsupervised learning requires unsegmented data.")
-
-    if args.do_supervised and not args.segmented:
-        raise ValueError("Supervised learning requires segmented data.")
-
-    if args.do_predict and not (args.predict_inputs or not args.predict_output or not args.init_checkpoint):
-        raise ValueError("Predicion requires init_checkpoint, inputs, and output.")
-
-    if (args.do_unsupervised or args.do_supervised) and args.save_path is None:
-        raise ValueError('Where do you want to save your trained model?')
-
     os.makedirs(args.save_path, exist_ok=True)
 
     set_seed(args.seed)
@@ -731,7 +712,7 @@ def first_part(args):
 
 
 if __name__ == "__main__":
-    start_time = time()
 
+    start_time = time()
     main(parse_args())
     print(f'Process time: {time() - start_time }')

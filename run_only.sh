@@ -15,13 +15,11 @@ MODEL_PATH=models/$MODE-$DATA-$MAX_SEG_LEN
 MODEL_PATH=models_"$EXTRY"_"$SEED"/$MODE-$DATA-$MAX_SEG_LEN
 MODEL_PATH=models_$EXTRY/$MODE-$DATA-$MAX_SEG_LEN
 
-if [ ! -z "$NAME" ];
-then
-MODEL_PATH=models_"$EXTRY"_"$NAME"/$MODE-$DATA-$MAX_SEG_LEN
+if [ ! -z "$NAME" ]; then
+    MODEL_PATH=models_"$EXTRY"_"$NAME"/$MODE-$DATA-$MAX_SEG_LEN
 fi
 echo $NAME
 echo $MODEL_PATH
-
 
 TRAINING_WORDS=$DATA_PATH/words.txt
 UNSEGMENT_DATA=$DATA_PATH/unsegmented.txt
@@ -44,13 +42,9 @@ CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config.json
 INIT_EMBEDDING_PATH=data/vocab/embedding.npy
 VOCAB_FILE=data/vocab/vocab.txt
 
-if [ $EXTRY == "bert" ]
-then
-CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert.json
 
-elif [ $EXTRY == "bert_seg" ]
-then
-CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert_seg.json
+if [[ "$dir" == *"bert"* ]]; then
+    CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
 fi
 echo $CONFIG_FILE
 
@@ -61,7 +55,6 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -87,16 +80,12 @@ python -u -m codes.run \
     --segment_token "  " \
     --seed $SEED
 
-
-rm $MODEL_PATH/checkpoint
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "gpt" ]
 then
 echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_gpt2.json
 
@@ -130,11 +119,8 @@ then
 echo "Start Unsupervised Training......"
 
 
-CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
-
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -164,7 +150,6 @@ elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert
 then
 echo "Start Unsupervised Training......"
 
-CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
@@ -198,7 +183,6 @@ elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert
 then
 echo "Start Unsupervised Training......"
 
-CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
@@ -230,6 +214,7 @@ python -u -m codes.run \
     --do_masked_lm \
     --mlm_train_steps 0 \
     --mask_ratio 0.15 \
+    --mlm_weight 0.3 \
     --seed $SEED
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_no_single" ]
@@ -237,11 +222,9 @@ then
 echo "Start Unsupervised Training......"
 
 
-CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -269,18 +252,12 @@ python -u -m codes.run \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_only_test" ]
 then
 echo "Start Unsupervised Training......"
 
-
-CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
-
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -307,15 +284,12 @@ python -u -m codes.run \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_seg" ]
 then
 echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -343,18 +317,12 @@ python -u -m codes.run \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
-
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_mlm" ]
 then
 echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
-
-CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert.json
 
 python -u -m codes.run_mlm \
     --use_cuda \
@@ -383,8 +351,6 @@ python -u -m codes.run_mlm \
     --mask_ratio 0.15 \
     --seed $SEED
 
-# rm $MODEL_PATH/checkpoint
-
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_seg_mlm" ]
 then
@@ -392,9 +358,6 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
-
-CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert_seg.json
 
 python -u -m codes.run_mlm \
     --use_cuda \
@@ -425,16 +388,12 @@ python -u -m codes.run_mlm \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
-
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "classifier" ]
 then
 echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-# cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
@@ -463,14 +422,12 @@ python -u -m codes.run \
     --seed $SEED
 
 
-# rm $MODEL_PATH/checkpoint
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative" ]
 then
 echo "Start Iterative Training......"
 
-# rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
 
 python -u -m codes.run \
     --use_cuda \
@@ -499,14 +456,13 @@ python -u -m codes.run \
     --iterative_train \
     --seed $SEED
 
-# rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative_lm" ]
 then
 echo "Start Iterative Training......"
 
-# rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
 
 python -u -m codes.run_lm \
     --use_cuda \
@@ -537,7 +493,6 @@ python -u -m codes.run_lm \
     --lm_train_steps 2000 \
     --seed $SEED
 
-# rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "circular" ]
 then
@@ -545,7 +500,6 @@ echo "Start Circular Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run_circular \
     --use_cuda \
@@ -575,14 +529,13 @@ python -u -m codes.run_circular \
     --seed $SEED
 
 
-rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "cls" ]
 then
 echo "Start Unsupervised Training......"
 
-# rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
 
 python -u codes/run_cls.py \
     --use_cuda \
@@ -610,11 +563,12 @@ python -u codes/run_cls.py \
     --do_classifier
 
 
-rm $MODEL_PATH/checkpoint
-
 elif [ $COMMAND == "train" ] && [ $MODE == "supervised" ]
 then
 echo "Start Supervised Training......"
+
+mkdir -p $MODEL_PATH
+
 python -u codes/run.py \
     --use_cuda \
     --do_supervised \
@@ -638,7 +592,6 @@ python -u codes/run.py \
     --valid_batch_size 500 \
     --segment_token "  "
 
-rm $MODEL_PATH/checkpoint
 
 elif [ $COMMAND == "predict" ]
 then

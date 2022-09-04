@@ -85,7 +85,7 @@ def SegmentEncoder(
             embedding=embedding,
             **kwargs,
         )
-    if bidirectional:
+    elif bidirectional:
         return SegmentBiLSTMEnocder(
             d_model=d_model,
             dropout=dropout,
@@ -93,8 +93,7 @@ def SegmentEncoder(
             embedding=embedding,
             **kwargs,
         )
-
-    if hug_name:
+    elif hug_name:
         if 'bert' in hug_name:
             return SegmentBERTEnocder(
                 hug_name=hug_name,
@@ -368,7 +367,7 @@ class SegmentBERTEnocder(nn.Module):
         return F.cross_entropy(logits.reshape(-1, logits.size(-1)), masked_labels.reshape(-1), ignore_index=0)
 
     @torch.no_grad()
-    def perturbating_impact_matrix(self, x: Tensor, pertur_bz: int=256, upper_bound : int = 10):
+    def perturbating_impact_matrix(self, x: Tensor, pertur_bz: int=128, upper_bound : int = 10):
         device = x.device
         input_ids, attention_mask = x, (x != 0)
 
@@ -438,8 +437,6 @@ class SegmentBERTEnocder(nn.Module):
     @torch.no_grad()
     def dist(self, x, y):
         return torch.sqrt(((x - y)**2).sum(-1))
-
-
 
 
 class SegmentGPT2Enocder(nn.Module):
