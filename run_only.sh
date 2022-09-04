@@ -15,13 +15,11 @@ MODEL_PATH=models/$MODE-$DATA-$MAX_SEG_LEN
 MODEL_PATH=models_"$EXTRY"_"$SEED"/$MODE-$DATA-$MAX_SEG_LEN
 MODEL_PATH=models_$EXTRY/$MODE-$DATA-$MAX_SEG_LEN
 
-if [ ! -z "$NAME" ];
-then
-MODEL_PATH=models_"$EXTRY"_"$NAME"/$MODE-$DATA-$MAX_SEG_LEN
+if [ ! -z "$NAME" ]; then
+    MODEL_PATH=models_"$EXTRY"_"$NAME"/$MODE-$DATA-$MAX_SEG_LEN
 fi
 echo $NAME
 echo $MODEL_PATH
-
 
 TRAINING_WORDS=$DATA_PATH/words.txt
 UNSEGMENT_DATA=$DATA_PATH/unsegmented.txt
@@ -45,11 +43,9 @@ INIT_EMBEDDING_PATH=data/vocab/embedding.npy
 VOCAB_FILE=data/vocab/vocab.txt
 
 
-if [[ "$dir" == *"bert"* ]];
-then
-    CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert.json
+if [[ "$dir" == *"bert"* ]]; then
+    CONFIG_FILE=models/slm_"$MAX_SEG_LEN"_config_bert.json
 fi
-
 echo $CONFIG_FILE
 
 
@@ -59,14 +55,13 @@ echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run \
     --use_cuda \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -85,8 +80,6 @@ python -u -m codes.run \
     --segment_token "  " \
     --seed $SEED
 
-
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "gpt" ]
 then
 echo "Start Unsupervised Training......"
@@ -101,7 +94,7 @@ python -u -m codes.run \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -125,39 +118,6 @@ elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert
 then
 echo "Start Unsupervised Training......"
 
-mkdir -p $MODEL_PATH
-rm -rf $MODEL_PATH/*
-
-python -u -m codes.run \
-    --use_cuda \
-    --do_unsupervised \
-    --do_valid \
-    --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
-    --predict_input $TEST_DATA \
-    --predict_output $TEST_OUTPUT \
-    --valid_inputs $VALID_DATA \
-    --valid_output $VALID_OUTPUT \
-    --vocab_file $VOCAB_FILE \
-    --config_file $CONFIG_FILE \
-    --save_path "$MODEL_PATH" \
-    --sgd_learning_rate 16.0 \
-    --adam_learning_rate 0.0005 \
-    --warm_up_steps 800 \
-    --train_steps 6000 \
-    --unsupervised_batch_size 2000 \
-    --predict_batch_size 2000 \
-    --valid_batch_size 2000 \
-    --segment_token "  " \
-    --hug_name "bert-base-chinese" \
-    --seed $SEED
-
-
-
-
-elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_seg" ]
-then
-echo "Start Unsupervised Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
@@ -167,7 +127,7 @@ python -u -m codes.run \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -184,10 +144,177 @@ python -u -m codes.run \
     --valid_batch_size 2000 \
     --segment_token "  " \
     --hug_name "bert-base-chinese" \
-    --encoder_mask_type "seg_mask" \
+    --seed $SEED
+
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_impact" ]
+then
+echo "Start Unsupervised Training......"
+
+
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
+
+python -u -m codes.run \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $UNSEGMENT_DATA  \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.0005 \
+    --warm_up_steps 800 \
+    --train_steps 6000 \
+    --unsupervised_batch_size 8000 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
+    --segment_token "  " \
+    --hug_name "bert-base-chinese" \
+    --is_impacted \
+    --seed $SEED
+
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_impact_mlm" ]
+then
+echo "Start Unsupervised Training......"
+
+
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
+
+python -u -m codes.run \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $UNSEGMENT_DATA  \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.0005 \
+    --warm_up_steps 800 \
+    --train_steps 6000 \
+    --unsupervised_batch_size 8000 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
+    --segment_token "  " \
+    --hug_name "bert-base-chinese" \
+    --is_impacted \
+    --upper_bound 10 \
+    --do_masked_lm \
+    --mlm_train_steps 0 \
+    --mask_ratio 0.15 \
+    --mlm_weight 0.3 \
+    --seed $SEED
+
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_no_single" ]
+then
+echo "Start Unsupervised Training......"
+
+
+
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
+
+python -u -m codes.run \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $UNSEGMENT_DATA  \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.0005 \
+    --warm_up_steps 800 \
+    --train_steps 6000 \
+    --unsupervised_batch_size 2000 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
+    --segment_token "  " \
+    --hug_name "bert-base-chinese" \
+    --no_single \
     --seed $SEED
 
 
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_only_test" ]
+then
+echo "Start Unsupervised Training......"
+
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
+
+python -u -m codes.run \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $TEST_DATA  \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.0005 \
+    --warm_up_steps 800 \
+    --train_steps 6000 \
+    --unsupervised_batch_size 8000 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
+    --segment_token "  " \
+    --hug_name "bert-base-chinese" \
+    --seed $SEED
+
+
+elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_seg" ]
+then
+echo "Start Unsupervised Training......"
+
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
+
+python -u -m codes.run \
+    --use_cuda \
+    --do_unsupervised \
+    --do_valid \
+    --do_predict \
+    --unsegmented $UNSEGMENT_DATA  \
+    --predict_input $TEST_DATA \
+    --predict_output $TEST_OUTPUT \
+    --valid_inputs $VALID_DATA \
+    --valid_output $VALID_OUTPUT \
+    --vocab_file $VOCAB_FILE \
+    --config_file $CONFIG_FILE \
+    --save_path "$MODEL_PATH" \
+    --sgd_learning_rate 16.0 \
+    --adam_learning_rate 0.0005 \
+    --warm_up_steps 1000 \
+    --train_steps 6000 \
+    --unsupervised_batch_size 8000 \
+    --predict_batch_size 2000 \
+    --valid_batch_size 2000 \
+    --segment_token "  " \
+    --hug_name "bert-base-chinese" \
+    --encoder_mask_type "seg_mask" \
+    --seed $SEED
 
 
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_mlm" ]
@@ -202,7 +329,7 @@ python -u -m codes.run_mlm \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -225,7 +352,6 @@ python -u -m codes.run_mlm \
     --seed $SEED
 
 
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "bert_seg_mlm" ]
 then
 echo "Start Unsupervised Training......"
@@ -233,14 +359,12 @@ echo "Start Unsupervised Training......"
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
 
-CONFIG_FILE=models/slm_"$DATA"_"$MAX_SEG_LEN"_config_bert_seg.json
-
 python -u -m codes.run_mlm \
     --use_cuda \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -264,8 +388,6 @@ python -u -m codes.run_mlm \
     --seed $SEED
 
 
-
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "classifier" ]
 then
 echo "Start Unsupervised Training......"
@@ -278,7 +400,7 @@ python -u -m codes.run \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -300,20 +422,19 @@ python -u -m codes.run \
     --seed $SEED
 
 
-
 elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iterative" ]
 then
 echo "Start Iterative Training......"
 
-# rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
 
 python -u -m codes.run \
     --use_cuda \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -340,15 +461,15 @@ elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "iter
 then
 echo "Start Iterative Training......"
 
-# rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
 
 python -u -m codes.run_lm \
     --use_cuda \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -379,14 +500,13 @@ echo "Start Circular Training......"
 
 mkdir -p $MODEL_PATH
 rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
 
 python -u -m codes.run_circular \
     --use_cuda \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -414,15 +534,15 @@ elif [ $COMMAND == "train" ] && [ $MODE == "unsupervised" ] && [ $EXTRY == "cls"
 then
 echo "Start Unsupervised Training......"
 
-# rm -rf $MODEL_PATH/*
-cp models/checkpoint $MODEL_PATH
+mkdir -p $MODEL_PATH
+rm -rf $MODEL_PATH/*
 
 python -u codes/run_cls.py \
     --use_cuda \
     --do_unsupervised \
     --do_valid \
     --do_predict \
-    --unsegmented $UNSEGMENT_DATA $TEST_DATA \
+    --unsegmented $UNSEGMENT_DATA  \
     --predict_input $TEST_DATA \
     --predict_output $TEST_OUTPUT \
     --valid_inputs $VALID_DATA \
@@ -443,15 +563,13 @@ python -u codes/run_cls.py \
     --do_classifier
 
 
-
-elif [ $COMMAND == "train" ] && [ $MODE == "supervised" ] && [ $EXTRY == "normal" ]
+elif [ $COMMAND == "train" ] && [ $MODE == "supervised" ]
 then
 echo "Start Supervised Training......"
-echo $MODEL_PATH
 
 mkdir -p $MODEL_PATH
 
-python -u -m codes.run \
+python -u codes/run.py \
     --use_cuda \
     --do_supervised \
     --do_valid \
@@ -475,36 +593,6 @@ python -u -m codes.run \
     --segment_token "  "
 
 
-elif [ $COMMAND == "train" ] && [ $MODE == "supervised" ] && [ $EXTRY == "bert" ]
-then
-echo "Start Supervised Training......"
-
-mkdir -p $MODEL_PATH
-
-python -u -m codes.run \
-    --use_cuda \
-    --do_supervised \
-    --do_valid \
-    --do_predict \
-    --segmented $SEGMENT_DATA \
-    --predict_input $TEST_DATA \
-    --predict_output $TEST_OUTPUT \
-    --valid_inputs $VALID_DATA \
-    --valid_output $VALID_OUTPUT \
-    --vocab_file $VOCAB_FILE \
-    --config_file $CONFIG_FILE \
-    --save_path "$MODEL_PATH" \
-    --sgd_learning_rate 4.0 \
-    --adam_learning_rate 0.005 \
-    --warm_up_steps 800 \
-    --train_steps 4000 \
-    --supervised_batch_size 2000 \
-    --predict_batch_size 500 \
-    --valid_batch_size 500 \
-    --hug_name "bert-base-chinese" \
-    --segment_token "  "
-
-
 elif [ $COMMAND == "predict" ]
 then
 echo "Start Predicting......"
@@ -518,6 +606,7 @@ python -u codes/run.py \
     --init_checkpoint "$MODEL_PATH" \
     --predict_batch_size 500 \
     --segment_token "  "
+
 elif [ $COMMAND == "valid" ]
 then
 

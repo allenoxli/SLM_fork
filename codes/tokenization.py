@@ -35,7 +35,10 @@ class CWSTokenizer(object):
         self.bos_token = bos_token
         self.eos_token = eos_token
         self.delimiters = delimiters
-        
+    
+    def __len__(self):
+        return 8677
+
     def word2id(self, word):
         if word not in self.vocab:
             return self.vocab['<UNK>']
